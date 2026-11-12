@@ -1,0 +1,60 @@
+#include <Arduino.h>
+#include "target.h"
+
+T1000aBoard board;
+
+RADIO_CLASS radio = new Module(P_LORA_NSS, P_LORA_DIO_1, P_LORA_RESET, P_LORA_BUSY, SPI);
+
+WRAPPER_CLASS radio_driver(radio, board);
+
+VolatileRTCClock rtc_clock;
+SensorManager sensors;
+
+#ifndef LORA_CR
+  #define LORA_CR      5
+#endif
+
+// Same RF switch wiring as the T1000-E (LR1110 DIO5..DIO8)
+static const uint32_t rfswitch_dios[Module::RFSWITCH_MAX_PINS] = {
+  RADIOLIB_LR11X0_DIO5,
+  RADIOLIB_LR11X0_DIO6,
+  RADIOLIB_LR11X0_DIO7,
+  RADIOLIB_LR11X0_DIO8,
+  RADIOLIB_NC
+};
+
+static const Module::RfSwitchMode_t rfswitch_table[] = {
+  // mode                 DIO5  DIO6  DIO7  DIO8
+  { LR11x0::MODE_STBY,   {LOW,  LOW,  LOW,  LOW  }},
+  { LR11x0::MODE_RX,     {HIGH, LOW,  LOW,  HIGH }},
+  { LR11x0::MODE_TX,     {HIGH, HIGH, LOW,  HIGH }},
+  { LR11x0::MODE_TX_HP,  {LOW,  HIGH, LOW,  HIGH }},
+  { LR11x0::MODE_TX_HF,  {LOW,  LOW,  LOW,  LOW  }},
+  { LR11x0::MODE_GNSS,   {LOW,  LOW,  HIGH, LOW  }},
+  { LR11x0::MODE_WIFI,   {LOW,  LOW,  LOW,  LOW  }},
+  END_OF_MODE_TABLE,
+};
+
+bool radio_init() {
+  SPI.begin();
+  int status = radio.begin(LORA_FREQ, LORA_BW, LORA_SF, LORA_CR, RADIOLIB_LR11X0_LORA_SYNC_WORD_PRIVATE, LORA_TX_POWER,
+                           16, LR11X0_DIO3_TCXO_VOLTAGE);
+  if (status != RADIOLIB_ERR_NONE) {
+    Serial.print("ERROR: radio init failed: ");
+    Serial.println(status);
+    return false;
+  }
+
+  radio.setCRC(2);
+  radio.explicitHeader();
+  radio.setRfSwitchTable(rfswitch_dios, rfswitch_table);
+#ifdef RX_BOOSTED_GAIN
+  radio.setRxBoostedGainMode(RX_BOOSTED_GAIN);
+#endif
+  return true;
+}
+
+mesh::LocalIdentity radio_new_identity() {
+  RadioNoiseListener rng(radio);
+  return mesh::LocalIdentity(&rng);  // create new random identity
+}
