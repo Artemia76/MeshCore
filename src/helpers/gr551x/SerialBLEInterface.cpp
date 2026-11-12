@@ -56,6 +56,28 @@ static volatile bool s_advertising;
 static uint32_t s_pin;                 // 0 = no pairing required
 static volatile bool s_secured;
 
+// Small event log (BLE events arrive in interrupt context), read with serialBLEDumpLog()
+struct LogEntry { uint32_t ms; uint16_t evt; uint16_t status; uint8_t a; uint8_t b; };
+#define LOG_SIZE 24
+static LogEntry s_log[LOG_SIZE];
+static volatile uint8_t s_log_pos, s_log_count;
+static void logEvt(uint16_t evt, uint16_t status, uint8_t a = 0, uint8_t b = 0) {
+  LogEntry& e = s_log[s_log_pos];
+  e.ms = millis(); e.evt = evt; e.status = status; e.a = a; e.b = b;
+  s_log_pos = (s_log_pos + 1) % LOG_SIZE;
+  if (s_log_count < LOG_SIZE) s_log_count++;
+}
+
+void serialBLEDumpLog(Print& out) {
+  out.printf("BLE pin=%s conn=%d cccd=%u secured=%d mtu=%u\r\n", s_pin ? "on" : "off", s_conn_idx, s_cccd,
+             s_secured, s_mtu);
+  uint8_t start = (s_log_pos + LOG_SIZE - s_log_count) % LOG_SIZE;
+  for (uint8_t i = 0; i < s_log_count; i++) {
+    const LogEntry& e = s_log[(start + i) % LOG_SIZE];
+    out.printf("  %lu ms evt=0x%04x status=0x%02x %u %u\r\n", (unsigned long)e.ms, e.evt, e.status, e.a, e.b);
+  }
+}
+
 static uint8_t attrIndex(uint16_t handle) {
   return prf_find_idx_by_handle(handle, s_start_hdl, NUS_IDX_NB, (uint8_t*)&s_char_mask);
 }
@@ -114,7 +136,12 @@ static void advStart() {
   if (ble_gap_adv_start(0, &s_adv_time) == SDK_SUCCESS) s_advertising = true;
 }
 
+static void onSecEvent(const ble_evt_t* e);
+
 static void gapEvent(const ble_evt_t* e) {
+  if (e->evt_id != BLE_GATTS_EVT_NTF_IND)
+    logEvt(e->evt_id, e->evt_status, e->evt.gapc_evt.index,
+           e->evt_id == BLE_GAPC_EVT_DISCONNECTED ? e->evt.gapc_evt.params.disconnected.reason : 0);
   switch (e->evt_id) {
     case BLE_GAPM_EVT_ADV_START:
       s_advertising = (e->evt_status == BLE_SUCCESS);
@@ -128,7 +155,7 @@ static void gapEvent(const ble_evt_t* e) {
       s_mtu = 23;
       s_cccd = 0;
       s_secured = false;
-      if (s_pin) ble_sec_enc_start((uint8_t)s_conn_idx);   // pair now (or re-encrypt with a bonded phone)
+      // pairing is started by the central when it touches a protected characteristic
       if (instance) { instance->_txBusy = false; }
       BLE_DEBUG_PRINTLN("connected idx=%d", s_conn_idx);
       break;
@@ -148,6 +175,7 @@ static void gapEvent(const ble_evt_t* e) {
       BLE_DEBUG_PRINTLN("MTU=%u", s_mtu);
       break;
     default:
+      onSecEvent(e);    // BLE_SEC_EVT_* (pairing)
       break;
   }
 }
@@ -167,7 +195,7 @@ static void onSecEvent(const ble_evt_t* e) {
         cfm.data.tk.key[2] = (uint8_t)(s_pin >> 16);
         cfm.data.tk.key[3] = (uint8_t)(s_pin >> 24);
       }
-      ble_sec_enc_cfm(e->evt.sec_evt.index, &cfm);
+      logEvt(0xE002, ble_sec_enc_cfm(e->evt.sec_evt.index, &cfm), rq.req_type);
       BLE_DEBUG_PRINTLN("security request type=%d", (int)rq.req_type);
       break;
     }
@@ -176,7 +204,6 @@ static void onSecEvent(const ble_evt_t* e) {
       BLE_DEBUG_PRINTLN("link encrypted status=0x%02x", e->evt_status);
       break;
     default:
-      onSecEvent(e);
       break;
   }
 }
@@ -201,7 +228,8 @@ static void onStackReady() {
     sec.key_size = 16;
     sec.ikey_dist = BLE_SEC_KDIST_ENCKEY | BLE_SEC_KDIST_IDKEY;
     sec.rkey_dist = BLE_SEC_KDIST_ENCKEY | BLE_SEC_KDIST_IDKEY;
-    ble_sec_params_set(&sec);
+    ble_gap_pair_enable(true);
+    logEvt(0xE000, ble_sec_params_set(&sec));
   }
 
   memset(&s_db, 0, sizeof(s_db));
