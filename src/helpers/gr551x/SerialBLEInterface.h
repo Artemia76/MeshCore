@@ -25,7 +25,7 @@ public:
    * init the BLE interface.
    * @param prefix   a prefix for the device name
    * @param name  IN/OUT - a name for the device (combined with prefix). If "@@MAC", is modified and returned
-   * @param pin_code   the BLE security pin (not enforced yet on GR551x)
+   * @param pin_code   the BLE passkey (static: entered on the phone), 0 = no pairing
    */
   void begin(const char* prefix, char* name, uint32_t pin_code);
 

@@ -27,16 +27,21 @@ enum { NUS_IDX_SVC, NUS_IDX_RX_CHAR, NUS_IDX_RX_VAL, NUS_IDX_TX_CHAR, NUS_IDX_TX
 static const uint8_t s_svc_uuid[] = { NUS_SERVICE_UUID };
 static const uint16_t s_char_mask = 0xFFFF;
 
-static const ble_gatts_attm_desc_128_t s_attr_tab[NUS_IDX_NB] = {
-  { ATT_128_PRIMARY_SERVICE, BLE_GATTS_READ_PERM_UNSEC, 0, 0 },
-  { ATT_128_CHARACTERISTIC, BLE_GATTS_READ_PERM_UNSEC, 0, 0 },
-  { NUS_RX_UUID, BLE_GATTS_WRITE_REQ_PERM_UNSEC | BLE_GATTS_WRITE_CMD_PERM_UNSEC,
-                        (BLE_GATTS_ATT_VAL_LOC_USER | BLE_GATTS_ATT_UUID_TYPE_SET(BLE_GATTS_UUID_TYPE_128)), MAX_FRAME_SIZE },
-  { ATT_128_CHARACTERISTIC, BLE_GATTS_READ_PERM_UNSEC, 0, 0 },
-  { NUS_TX_UUID, BLE_GATTS_NOTIFY_PERM_UNSEC,
-                        (BLE_GATTS_ATT_VAL_LOC_USER | BLE_GATTS_ATT_UUID_TYPE_SET(BLE_GATTS_UUID_TYPE_128)), MAX_FRAME_SIZE },
-  { ATT_128_CLIENT_CHAR_CFG, BLE_GATTS_READ_PERM_UNSEC | BLE_GATTS_WRITE_REQ_PERM_UNSEC, 0, 0 },
-};
+// Attribute table, filled in onStackReady(): with a PIN, the NUS characteristics require an
+// authenticated (MITM) encrypted link, so the central has to pair with the passkey first.
+static ble_gatts_attm_desc_128_t s_attr_tab[NUS_IDX_NB];
+static const uint8_t s_uuid_svc[16]  = ATT_128_PRIMARY_SERVICE;
+static const uint8_t s_uuid_char[16] = ATT_128_CHARACTERISTIC;
+static const uint8_t s_uuid_cccd[16] = ATT_128_CLIENT_CHAR_CFG;
+static const uint8_t s_uuid_rx[16]   = { NUS_RX_UUID };
+static const uint8_t s_uuid_tx[16]   = { NUS_TX_UUID };
+
+static void setAttr(int idx, const uint8_t* uuid, uint16_t perm, uint16_t ext_perm, uint16_t max_size) {
+  memcpy(s_attr_tab[idx].uuid, uuid, 16);
+  s_attr_tab[idx].perm = perm;
+  s_attr_tab[idx].ext_perm = ext_perm;
+  s_attr_tab[idx].max_size = max_size;
+}
 
 static SerialBLEInterface* instance = nullptr;
 static ble_gatts_create_db_t s_db;
@@ -48,6 +53,8 @@ static char s_dev_name[32 + 16];
 static ble_gap_adv_param_t s_adv_param;
 static ble_gap_adv_time_param_t s_adv_time;
 static volatile bool s_advertising;
+static uint32_t s_pin;                 // 0 = no pairing required
+static volatile bool s_secured;
 
 static uint8_t attrIndex(uint16_t handle) {
   return prf_find_idx_by_handle(handle, s_start_hdl, NUS_IDX_NB, (uint8_t*)&s_char_mask);
@@ -120,6 +127,8 @@ static void gapEvent(const ble_evt_t* e) {
       s_conn_idx = e->evt.gapc_evt.index;
       s_mtu = 23;
       s_cccd = 0;
+      s_secured = false;
+      if (s_pin) ble_sec_enc_start((uint8_t)s_conn_idx);   // pair now (or re-encrypt with a bonded phone)
       if (instance) { instance->_txBusy = false; }
       BLE_DEBUG_PRINTLN("connected idx=%d", s_conn_idx);
       break;
@@ -127,6 +136,7 @@ static void gapEvent(const ble_evt_t* e) {
       BLE_DEBUG_PRINTLN("disconnected reason=0x%02x", e->evt.gapc_evt.params.disconnected.reason);
       s_conn_idx = -1;
       s_cccd = 0;
+      s_secured = false;
       if (instance) instance->_txBusy = false;
       advStart();
       break;
@@ -142,7 +152,58 @@ static void gapEvent(const ble_evt_t* e) {
   }
 }
 
+static void onSecEvent(const ble_evt_t* e) {
+  switch (e->evt_id) {
+    case BLE_SEC_EVT_LINK_ENC_REQUEST: {
+      const ble_sec_evt_enc_req_t& rq = e->evt.sec_evt.params.enc_req;
+      ble_sec_cfm_enc_t cfm;
+      memset(&cfm, 0, sizeof(cfm));
+      cfm.req_type = rq.req_type;
+      cfm.accept = true;
+      if (rq.req_type == BLE_SEC_TK_REQ) {
+        // static passkey: the device has no display, the user types the PIN on the phone
+        cfm.data.tk.key[0] = (uint8_t)(s_pin);
+        cfm.data.tk.key[1] = (uint8_t)(s_pin >> 8);
+        cfm.data.tk.key[2] = (uint8_t)(s_pin >> 16);
+        cfm.data.tk.key[3] = (uint8_t)(s_pin >> 24);
+      }
+      ble_sec_enc_cfm(e->evt.sec_evt.index, &cfm);
+      BLE_DEBUG_PRINTLN("security request type=%d", (int)rq.req_type);
+      break;
+    }
+    case BLE_SEC_EVT_LINK_ENCRYPTED:
+      s_secured = (e->evt_status == BLE_SUCCESS);
+      BLE_DEBUG_PRINTLN("link encrypted status=0x%02x", e->evt_status);
+      break;
+    default:
+      onSecEvent(e);
+      break;
+  }
+}
+
 static void onStackReady() {
+  uint16_t lvl = s_pin ? BLE_GATTS_AUTH : BLE_GATTS_NOAUTH;
+  uint16_t val_ext = BLE_GATTS_ATT_VAL_LOC_USER | BLE_GATTS_ATT_UUID_TYPE_SET(BLE_GATTS_UUID_TYPE_128);
+  setAttr(NUS_IDX_SVC, s_uuid_svc, BLE_GATTS_READ_PERM_UNSEC, 0, 0);
+  setAttr(NUS_IDX_RX_CHAR, s_uuid_char, BLE_GATTS_READ_PERM_UNSEC, 0, 0);
+  setAttr(NUS_IDX_RX_VAL, s_uuid_rx, BLE_GATTS_WRITE_REQ_PERM(lvl) | BLE_GATTS_WRITE_CMD_PERM(lvl), val_ext, MAX_FRAME_SIZE);
+  setAttr(NUS_IDX_TX_CHAR, s_uuid_char, BLE_GATTS_READ_PERM_UNSEC, 0, 0);
+  setAttr(NUS_IDX_TX_VAL, s_uuid_tx, BLE_GATTS_NOTIFY_PERM(lvl), val_ext, MAX_FRAME_SIZE);
+  setAttr(NUS_IDX_TX_CFG, s_uuid_cccd, BLE_GATTS_READ_PERM_UNSEC | BLE_GATTS_WRITE_REQ_PERM(lvl), 0, 0);
+
+  if (s_pin) {
+    ble_sec_param_t sec;
+    memset(&sec, 0, sizeof(sec));
+    sec.level = BLE_SEC_MODE1_LEVEL3;              // encrypted + MITM
+    sec.io_cap = BLE_SEC_IO_DISPLAY_ONLY;          // static passkey entered on the phone
+    sec.oob = false;
+    sec.auth = BLE_SEC_AUTH_BOND | BLE_SEC_AUTH_MITM | BLE_SEC_AUTH_SEC_CON;
+    sec.key_size = 16;
+    sec.ikey_dist = BLE_SEC_KDIST_ENCKEY | BLE_SEC_KDIST_IDKEY;
+    sec.rkey_dist = BLE_SEC_KDIST_ENCKEY | BLE_SEC_KDIST_IDKEY;
+    ble_sec_params_set(&sec);
+  }
+
   memset(&s_db, 0, sizeof(s_db));
   s_start_hdl = PRF_INVALID_HANDLE;
   s_db.shdl = &s_start_hdl;
@@ -182,8 +243,8 @@ static void onStackReady() {
 }
 
 void SerialBLEInterface::begin(const char* prefix, char* name, uint32_t pin_code) {
-  (void)pin_code;   // TODO: passkey pairing (Goodix security manager)
   instance = this;
+  s_pin = pin_code;
 
   if (strcmp(name, "@@MAC") == 0) {
     ble_gap_bdaddr_t addr;
@@ -221,7 +282,7 @@ void SerialBLEInterface::disable() {
 }
 
 bool SerialBLEInterface::isConnected() const {
-  return s_conn_idx >= 0 && s_cccd == PRF_CLI_START_NTF;
+  return s_conn_idx >= 0 && s_cccd == PRF_CLI_START_NTF && (s_secured || !s_pin);
 }
 
 bool SerialBLEInterface::isWriteBusy() const {
