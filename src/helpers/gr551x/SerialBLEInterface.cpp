@@ -132,7 +132,7 @@ static void prfEvent(const ble_evt_t* e) {
 }
 
 static void advStart() {
-  if (!instance || !instance->_isEnabled || s_conn_idx >= 0 || s_advertising) return;
+  if (!instance || !instance->_isEnabled || s_conn_idx >= 0 || s_advertising || gr551x_ble_stopped()) return;
   if (ble_gap_adv_start(0, &s_adv_time) == SDK_SUCCESS) s_advertising = true;
 }
 

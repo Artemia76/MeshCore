@@ -8,6 +8,7 @@ class T1000aBoard : public GR551xBoard {
 public:
   void begin() override;
   void loop() override;
+  void powerOff() override;
   const char* getManufacturerName() const override { return "Seeed Tracker T1000-A"; }
 
   // Battery on MSIO4 through a /2 divider (divider enabled by PIN_BATTERY_EN, kept high).
