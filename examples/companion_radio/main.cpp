@@ -367,7 +367,7 @@ void loop() {
 #endif
 
   if (!the_mesh.hasPendingWork()) {
-#if defined(NRF52_PLATFORM)
+#if defined(NRF52_PLATFORM) || defined(GR551X_PLATFORM)
     board.sleep(0); // nrf ignores seconds param, sleeps whenever possible
 #endif
   }

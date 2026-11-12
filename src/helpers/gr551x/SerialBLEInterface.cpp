@@ -230,6 +230,10 @@ static void onStackReady() {
     sec.rkey_dist = BLE_SEC_KDIST_ENCKEY | BLE_SEC_KDIST_IDKEY;
     ble_gap_pair_enable(true);
     logEvt(0xE000, ble_sec_params_set(&sec));
+    // Controller address resolution: phones use resolvable private addresses that change over time; without
+    // the resolving list a bonded phone is not recognised after its address changes (or after a reboot) and
+    // pairing fails. Our own advertising address stays static (BLE_GAP_OWN_ADDR_STATIC).
+    logEvt(0xE003, ble_gap_privacy_params_set(900, true));
   }
 
   memset(&s_db, 0, sizeof(s_db));
