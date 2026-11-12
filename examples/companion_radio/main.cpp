@@ -35,6 +35,10 @@ MultiSerialInterface interface_manager;
     // include rp2040 (Pico W / CYW43) bluetooth interface
     #include <helpers/rp2040/SerialBLEInterface.h>
     SerialBLEInterface bluetooth_interface;
+  #elif defined(GR551X_PLATFORM)
+    // include Goodix GR551x bluetooth interface
+    #include <helpers/gr551x/SerialBLEInterface.h>
+    SerialBLEInterface bluetooth_interface;
   #else
     #error "SerialBLEInterface is not defined for this platform"
   #endif
@@ -89,7 +93,7 @@ MultiSerialInterface interface_manager;
 #endif
 
 // platform file system
-#if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
+#if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM) || defined(GR551X_PLATFORM)
   #include <InternalFileSystem.h>
   #if defined(QSPIFLASH)
     #include <CustomLFS_QSPIFlash.h>
@@ -166,7 +170,7 @@ void setup() {
 
   fast_rng.begin(radio_driver.getRngSeed());
 
-#if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
+#if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM) || defined(GR551X_PLATFORM)
   InternalFS.begin();
   #if defined(QSPIFLASH)
     if (!QSPIFlash.begin()) {
