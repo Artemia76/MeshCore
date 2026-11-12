@@ -2,6 +2,7 @@
 
 #ifdef T1000A_BLE_CONSOLE
   #include <BleConsole.h>
+  #include <helpers/gr551x/SerialBLEInterface.h>
 
 static T1000aBoard* s_board;
 
@@ -9,6 +10,10 @@ static bool consoleCommand(int argc, char** argv) {
   if (!strcmp(argv[0], "bat")) {
     int raw = analogReadMilliVolts(PIN_BATTERY);
     BleConsole.printf("battery: %u mV (MSIO4 %d mV)\r\n", s_board->getBattMilliVolts(), raw);
+    return true;
+  }
+  if (!strcmp(argv[0], "blelog")) {
+    serialBLEDumpLog(BleConsole);
     return true;
   }
   return false;
