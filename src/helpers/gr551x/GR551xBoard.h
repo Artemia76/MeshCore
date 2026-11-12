@@ -22,6 +22,9 @@ public:
   const char* getManufacturerName() const override { return "Generic GR551x"; }
   void reboot() override { gr551x_reboot(); }
 
+  // light sleep (WFI) until the next interrupt; the core wakes the loop at least once per second
+  void sleep(uint32_t secs) override { gr551x_idle_request(); }
+
   void loop() override {
     if (dfu_at && millis() >= dfu_at) gr551x_enter_bootloader();
   }
