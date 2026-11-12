@@ -1,5 +1,7 @@
 #include <Arduino.h>
 #include "target.h"
+#include "T1000aGpsDriver.h"
+#include <helpers/sensors/MicroNMEALocationProvider.h>
 
 T1000aBoard board;
 
@@ -8,7 +10,13 @@ RADIO_CLASS radio = new Module(P_LORA_NSS, P_LORA_DIO_1, P_LORA_RESET, P_LORA_BU
 WRAPPER_CLASS radio_driver(radio, board);
 
 VolatileRTCClock rtc_clock;
-SensorManager sensors;
+T1000aGpsDriver gps_driver(Serial1);
+MicroNMEALocationProvider nmea(gps_driver, &rtc_clock);
+T1000aSensorManager sensors(nmea, gps_driver);
+
+#ifdef DISPLAY_CLASS
+  NullDisplayDriver display;
+#endif
 
 #ifndef LORA_CR
   #define LORA_CR      5
@@ -57,4 +65,57 @@ bool radio_init() {
 mesh::LocalIdentity radio_new_identity() {
   RadioNoiseListener rng(radio);
   return mesh::LocalIdentity(&rng);  // create new random identity
+}
+
+// ---------------------------------------------------------------- sensors (GPS only for now)
+
+bool T1000aSensorManager::begin() {
+  _gps_driver->initialize();
+  return true;
+}
+
+bool T1000aSensorManager::querySensors(uint8_t requester_permissions, CayenneLPP& telemetry) {
+  if (requester_permissions & TELEM_PERM_LOCATION) {
+    telemetry.addGPS(TELEM_CHANNEL_SELF, node_lat, node_lon, node_altitude);
+  }
+  return true;
+}
+
+void T1000aSensorManager::loop() {
+  static long next_gps_update = 0;
+  _nmea->loop();
+  if (millis() > next_gps_update) {
+    if (_nmea->isGpsOn() && _nmea->hasValidFix()) {
+      node_lat = ((double)_nmea->getLatitude()) / 1000000.;
+      node_lon = ((double)_nmea->getLongitude()) / 1000000.;
+      node_altitude = ((double)_nmea->getAltitude()) / 1000.0;
+    }
+    next_gps_update = millis() + 1000;
+  }
+}
+
+int T1000aSensorManager::getNumSettings() const { return 1; }   // "gps" (power switch)
+
+const char* T1000aSensorManager::getSettingName(int i) const {
+  return i == 0 ? "gps" : NULL;
+}
+
+const char* T1000aSensorManager::getSettingValue(int i) const {
+  if (i == 0) return _nmea->isGpsOn() ? "1" : "0";
+  return NULL;
+}
+
+bool T1000aSensorManager::setSettingValue(const char* name, const char* value) {
+  if (strcmp(name, "gps") == 0) {
+    _nmea->setGpsOn(strcmp(value, "0") != 0);
+    return true;
+  }
+  return false;
+}
+
+// Console diagnostics ("gps")
+void t1000aConsoleGps(Print& out) {
+  out.printf("gps: on=%d fix=%d sats=%ld lat=%ld lon=%ld uart_rx=%lu octets en=%d\r\n", nmea.isGpsOn(), nmea.hasValidFix(),
+             (long)nmea.satellitesCount(), (long)nmea.getLatitude(), (long)nmea.getLongitude(), (unsigned long)Serial1.rxBytes(),
+             digitalRead(GPS_EN) == HIGH);
 }
