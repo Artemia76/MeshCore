@@ -62,11 +62,14 @@ void T1000aBoard::loop() {
 }
 
 // Long press (3 s, UITask) -> "off". Holding on until 6 s restarts into the BLE DFU bootloader instead
-// (handled by the platform variant). Soft off for now: GNSS off, LR1110 held in reset, BLE stopped,
+// (handled by the platform variant). Soft off for now: GNSS and buzzer off, LR1110 held in reset, BLE stopped,
 // the CPU waits for the next button press and then reboots.
 void T1000aBoard::powerOff() {
   digitalWrite(GPS_EN, LOW);
   digitalWrite(P_LORA_RESET, LOW);
+#ifdef PIN_BUZZER_EN
+  digitalWrite(PIN_BUZZER_EN, LOW);
+#endif
   gr551x_ble_stop();
 
   digitalWrite(PIN_LED, HIGH);
