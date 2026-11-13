@@ -813,7 +813,7 @@ switch(t){
     buzzer.play("kerplop:d=16,o=6,b=120:32g#,32c#");
     break;
   case UIEventType::ack:
-    buzzer.play("ack:d=32,o=8,b=120:c");
+    buzzer.play("ack:d=32,o=7,b=120:c");   // NonBlockingRTTTL only knows octaves 4..7
     break;
   case UIEventType::roomMessage:
   case UIEventType::newContactMessage:
