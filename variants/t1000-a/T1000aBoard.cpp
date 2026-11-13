@@ -18,6 +18,13 @@ static bool consoleCommand(int argc, char** argv) {
     t1000aConsoleGps(BleConsole);
     return true;
   }
+  if (!strcmp(argv[0], "beep")) {   // beep [Hz] : 500 ms tone, ignores the "buzzer off" setting
+    unsigned freq = argc > 1 ? (unsigned)atoi(argv[1]) : 2000;
+    digitalWrite(PIN_BUZZER_EN, HIGH);
+    tone(PIN_BUZZER, freq, 500);
+    BleConsole.printf("beep %u Hz\r\n", freq);
+    return true;
+  }
   if (!strcmp(argv[0], "blelog")) {
     serialBLEDumpLog(BleConsole);
     return true;
