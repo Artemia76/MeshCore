@@ -25,6 +25,16 @@ static bool consoleCommand(int argc, char** argv) {
     BleConsole.printf("beep %u Hz\r\n", freq);
     return true;
   }
+  if (!strcmp(argv[0], "power")) {   // power [log|reset] : time spent in each state (power budget)
+    if (argc > 1 && !strcmp(argv[1], "log")) s_board->powerLog.printLog(BleConsole);
+    else if (argc > 1 && !strcmp(argv[1], "reset")) { s_board->powerLog.reset(); BleConsole.print("power: reset\r\n"); }
+    else s_board->powerLog.printSummary(BleConsole);
+    return true;
+  }
+  if (!strcmp(argv[0], "chg")) {     // charge-state candidates, to compare with the cable plugged / unplugged
+    s_board->powerLog.printCharge(BleConsole);
+    return true;
+  }
   if (!strcmp(argv[0], "blelog")) {
     serialBLEDumpLog(BleConsole);
     return true;
@@ -58,12 +68,14 @@ void T1000aBoard::begin() {
   BleConsole.begin("T1000-A", "MeshCore", false);
   s_board = this;
   BleConsole.onCommand(consoleCommand);
+  powerLog.begin(this);
 #endif
 }
 
 void T1000aBoard::loop() {
 #ifdef T1000A_BLE_CONSOLE
   BleConsole.poll();
+  powerLog.loop();
 #endif
   GR551xBoard::loop();
 }

@@ -38,6 +38,23 @@ which is never overwritten. You need a Linux PC with BlueZ, Python 3 and the `bl
 Safety net: after 3 consecutive short boots (crash or watchdog before 2 min of uptime) the firmware restarts into
 the bootloader by itself.
 
+## Development console and power log
+
+The firmware exposes a text console on the Goodix UART service (not advertised: connect to the companion's BLE
+name), e.g. `t1000_ble.py console --name <name>`. Besides `bat`, `gps`, `beep`, `blelog` and `dfu`:
+
+- `power`: time spent in each state since the last reset — CPU idle, BLE connected / advertising, LoRa transmit
+  time and packets, GNSS on — plus the battery voltage.
+- `power log`: one CSV line per 10 min interval over the last 24 h (`t_s,dt_s,bat_mv,idle_pm,wakes,conn_s,adv_s,
+  gps_s,tx_ms,rx,tx,flags,msio0_mv`). `flags` gives the state when the battery was read: `0x01` GNSS on,
+  `0x02` BLE connected, `0x04` reading postponed until a LoRa transmission ended, `0x08`/`0x10` AON4/AON5 (charge
+  state candidates), `0x20` GPIO14 (measurement divider), `0x40` buzzer amplifier enabled.
+- `power reset`: clears the counters and the log.
+- `chg`: raw levels of the charge state candidates (AON4, AON5, MSIO0), to compare with the cable plugged in and out.
+
+Capture from a PC: `t1000_ble.py console --name <name> --cmd power --cmd "power log" > capture.txt`. The log only
+holds times: currents per state come from the datasheets, so the power budget is computed off-device.
+
 ## Going back to the Seeed firmware
 
 Flash Seeed's official T1000-A application image (`tracker-t1000-ab-app-ble-*.bin`) the same way (step 2 then 3).
