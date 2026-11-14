@@ -2,9 +2,9 @@
 
 void t1000aRadioCounts(uint32_t& rx, uint32_t& tx);   // target.cpp
 
-#define PIN_CHG_AON4  GR551X_PIN_AON(4)
+#define PIN_CHG_AON4  EXT_CHRG_DETECT     // charger status (low while charging), set up by T1000aBoard
 #define PIN_CHG_AON5  GR551X_PIN_AON(5)
-#define PIN_CHG_MSIO0 GR551X_PIN_MSIO(0)
+#define PIN_CHG_MSIO0 PIN_EXT_POWER       // charging cable present
 
 static uint16_t sat16(uint64_t v) { return v > 0xFFFF ? 0xFFFF : (uint16_t)v; }
 static uint32_t ticksToSec(uint64_t t) { return (uint32_t)(t >> 15); }
@@ -17,8 +17,7 @@ static void printPct(Print& out, uint64_t part, uint64_t whole) {
 
 void T1000aPowerLog::begin(mesh::MainBoard* board) {
   _board = board;
-  // Charge-state candidates (docs/materiel-t1000a.md): read raw, the right one is identified on the board
-  pinMode(PIN_CHG_AON4, INPUT_PULLUP);
+  // AON5: role still unknown (docs/materiel-t1000a.md), logged raw
   pinMode(PIN_CHG_AON5, INPUT_PULLUP);
   reset();
 }

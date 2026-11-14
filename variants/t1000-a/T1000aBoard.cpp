@@ -1,5 +1,6 @@
 #include "T1000aBoard.h"
 #include <gr551x_ble.h>
+#include <app_pwm.h>
 
 #ifdef T1000A_BLE_CONSOLE
   #include <BleConsole.h>
@@ -31,6 +32,14 @@ static bool consoleCommand(int argc, char** argv) {
     else s_board->powerLog.printSummary(BleConsole);
     return true;
   }
+  if (!strcmp(argv[0], "led")) {     // led [0..255] : analogWrite on the status LED, then PWM1 / AON3 state
+    if (argc > 1) analogWrite(PIN_LED, atoi(argv[1]));
+    pwm_handle_t* h = app_pwm_get_handle(APP_PWM_ID_1);
+    BleConsole.printf("pwm1: state=%d mode=%08lx upd=%08lx prd=%lu a0=%lu a1=%lu aq=%08lx\r\n", h ? (int)h->state : -1,
+                      PWM1->MODE, PWM1->UPDATE, PWM1->PRD, PWM1->CMPA0, PWM1->CMPA1, PWM1->AQCTRL);
+    BleConsole.printf("aon: mux=%08lx pad1=%08lx\r\n", MCU_SUB->AON_PAD_MUX_CTL, AON->AON_PAD_CTL1);
+    return true;
+  }
   if (!strcmp(argv[0], "chg")) {     // charge-state candidates, to compare with the cable plugged / unplugged
     s_board->powerLog.printCharge(BleConsole);
     return true;
@@ -49,6 +58,7 @@ void T1000aBoard::begin() {
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, LOW);
   pinMode(PIN_BUTTON1, INPUT);
+  pinMode(EXT_CHRG_DETECT, INPUT_PULLUP);   // charger status: open drain, low while charging
 
   // GPIO14: enables the battery/sensor measurement divider in Seeed's firmware (kept high for now)
   pinMode(PIN_LORA_RF_EN, OUTPUT);
@@ -70,6 +80,16 @@ void T1000aBoard::begin() {
   BleConsole.onCommand(consoleCommand);
   powerLog.begin(this);
 #endif
+}
+
+bool T1000aBoard::isExternalPowered() {
+  uint32_t now = millis();
+  if (!_ext_power_valid || now - _ext_power_at >= 1000) {
+    _ext_power = analogReadMilliVolts(PIN_EXT_POWER) > 1000;
+    _ext_power_at = now;
+    _ext_power_valid = true;
+  }
+  return _ext_power;
 }
 
 void T1000aBoard::loop() {

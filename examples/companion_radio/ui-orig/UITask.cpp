@@ -427,6 +427,41 @@ void UITask::userLedHandler() {
   static int last_increment = 0;
 
   int cur_time = millis();
+#if defined(STATUS_LED_CHARGE_ANIM) && defined(EXT_CHRG_DETECT)
+  // Dimmable single LED on the charger: breathing (sine, gamma corrected) while charging, solid once charged.
+  // MeshCore activity is shown in negative at the top of the curve: dark for LED_ON_MILLIS every cycle,
+  // LED_ON_MSG_MILLIS while messages are waiting. Needs a board that stays awake on the charger.
+  static unsigned long next_pwr_check = 0;
+  static bool ext_powered = false, ext_charging = false, led_analog = false;
+  unsigned long now = millis();
+  if (now >= next_pwr_check) {
+    ext_powered = _board->isExternalPowered();
+    ext_charging = ext_powered && digitalRead(EXT_CHRG_DETECT) == LOW;
+    next_pwr_check = now + 1000;
+  }
+  if (ext_powered) {
+    unsigned long ph = now % LED_CYCLE_MILLIS;
+    unsigned long dark = (_msgcount > 0) ? LED_ON_MSG_MILLIS : LED_ON_MILLIS;
+    int level = 255;
+    if (ph >= LED_CYCLE_MILLIS / 2 && ph < LED_CYCLE_MILLIS / 2 + dark) {
+      level = 0;
+    } else if (ext_charging) {
+      const float lo = 0.12f;   // perceived minimum: never fully dark (1 % duty after gamma)
+      float b = lo + (1.0f - lo) * 0.5f * (1.0f - cosf(2.0f * (float)PI * ph / LED_CYCLE_MILLIS));
+      level = (int)(powf(b, 2.2f) * 255.0f + 0.5f);
+      if (level < 3) level = 3;
+    }
+    analogWrite(PIN_STATUS_LED, level);
+    led_analog = true;
+    state = 0;
+    next_change = cur_time;
+    return;
+  }
+  if (led_analog) {               // unplugged: back to the on/off heartbeat
+    led_analog = false;
+    digitalWrite(PIN_STATUS_LED, !LED_STATE_ON);
+  }
+#endif
   if (cur_time > next_change) {
     if (state == 0) {
       state = 1;
