@@ -14,11 +14,25 @@ This port lives in a fork ([Artemia76/MeshCore](https://github.com/Artemia76/Mes
 | LoRa (LR1110) TX/RX, mesh | works, interoperates with stock MeshCore nodes |
 | Companion over BLE (MeshCore apps), PIN pairing | works (default PIN `123456`) |
 | GNSS (AG3335), battery voltage, buzzer, status LED, button | works |
+| Charge indication on the status LED, external power detection | works (see below) |
 | Soft power off (long press 3 s) | works |
 | Repeater / room server builds | not provided yet |
 | Light sleep | partial (CPU idles between loop passes) |
 
 Firmware: `t1000a_companion_radio_ble`.
+
+## Status LED
+
+The T1000-A has a single LED (AON3), dimmable through PWM1.
+
+| State | LED |
+|---|---|
+| On battery | short blink every 4 s (longer when messages are waiting) |
+| Charging (cable on MSIO0, charger status AON4 low) | slow breathing, 4 s period |
+| Charged (cable on MSIO0, AON4 high) | steady on |
+
+On the charger, MeshCore activity is shown in negative: the LED goes dark for 20 ms at the top of each 4 s cycle,
+200 ms when messages are waiting. While the cable is plugged in the CPU no longer sleeps (smooth animation).
 
 ## Flashing
 
