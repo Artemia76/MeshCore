@@ -8,11 +8,22 @@
 // Seeed SenseCAP T1000-A: Goodix GR5515 (BLE) + Semtech LR1110 + Airoha AG3335.
 // Flashing: over BLE through the stock Seeed bootloader ("start ota" restarts into it).
 class T1000aBoard : public GR551xBoard {
+  bool _ext_power = false;
+  uint32_t _ext_power_at = 0;
+  bool _ext_power_valid = false;
+
 public:
   void begin() override;
   void loop() override;
   void powerOff() override;
   const char* getManufacturerName() const override { return "Seeed Tracker T1000-A"; }
+
+  // Charging cable on MSIO0 (~2490 mV plugged in, ~35 mV unplugged, measured on the board); read at most once a second
+  bool isExternalPowered() override;
+  // No light sleep on the charger: keeps the LED animation smooth, and power does not matter there
+  void sleep(uint32_t secs) override {
+    if (!isExternalPowered()) GR551xBoard::sleep(secs);
+  }
 
 #ifdef T1000A_BLE_CONSOLE
   T1000aPowerLog powerLog;   // time spent in each state, read with the "power" console command

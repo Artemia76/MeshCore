@@ -49,6 +49,7 @@ void T1000aBoard::begin() {
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, LOW);
   pinMode(PIN_BUTTON1, INPUT);
+  pinMode(EXT_CHRG_DETECT, INPUT_PULLUP);   // charger status: open drain, low while charging
 
   // GPIO14: enables the battery/sensor measurement divider in Seeed's firmware (kept high for now)
   pinMode(PIN_LORA_RF_EN, OUTPUT);
@@ -70,6 +71,16 @@ void T1000aBoard::begin() {
   BleConsole.onCommand(consoleCommand);
   powerLog.begin(this);
 #endif
+}
+
+bool T1000aBoard::isExternalPowered() {
+  uint32_t now = millis();
+  if (!_ext_power_valid || now - _ext_power_at >= 1000) {
+    _ext_power = analogReadMilliVolts(PIN_EXT_POWER) > 1000;
+    _ext_power_at = now;
+    _ext_power_valid = true;
+  }
+  return _ext_power;
 }
 
 void T1000aBoard::loop() {
