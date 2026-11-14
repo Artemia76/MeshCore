@@ -113,6 +113,12 @@ bool T1000aSensorManager::setSettingValue(const char* name, const char* value) {
   return false;
 }
 
+// Packet counters for the power log
+void t1000aRadioCounts(uint32_t& rx, uint32_t& tx) {
+  rx = radio_driver.getPacketsRecv();
+  tx = radio_driver.getPacketsSent();
+}
+
 // Console diagnostics ("gps")
 void t1000aConsoleGps(Print& out) {
   out.printf("gps: on=%d fix=%d sats=%ld lat=%ld lon=%ld uart_rx=%lu octets en=%d\r\n", nmea.isGpsOn(), nmea.hasValidFix(),
