@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "target.h"
 #include "T1000aGpsDriver.h"
+#include <InternalFileSystem.h>
 #include <helpers/sensors/MicroNMEALocationProvider.h>
 
 T1000aBoard board;
@@ -115,7 +116,46 @@ bool T1000aSensorManager::setSettingValue(const char* name, const char* value) {
 
 // Power off: LR1110 cold sleep (no configuration kept; radio_init() runs again after the reboot)
 void t1000aRadioSleep() {
+  // RadioLib sends SetSleep without waiting for BUSY low: in the RX duty cycle's sleep phase that NSS edge only
+  // wakes the LR1110 and the command is lost. So leave the cycle first.
+  radio.leaveDuty();
   radio.sleep(false, 0);
+}
+
+// RX duty cycle (console "rxduty", power log). The setting is kept in InternalFS.
+#define RXDUTY_FILE "/t1000a_rxduty"
+
+void t1000aRxDutySet(bool on, bool save) {
+  radio_driver.setRxDutyCycle(on);
+  if (!save) return;
+  InternalFS.remove(RXDUTY_FILE);
+  Adafruit_LittleFS_Namespace::File f = InternalFS.open(RXDUTY_FILE, Adafruit_LittleFS_Namespace::FILE_O_WRITE);
+  if (f) { f.write((uint8_t)(on ? '1' : '0')); f.close(); }
+}
+
+// Saved setting, applied once the file system is up (radio_init() runs before InternalFS.begin())
+void t1000aRxDutyLoad() {
+  Adafruit_LittleFS_Namespace::File f = InternalFS.open(RXDUTY_FILE, Adafruit_LittleFS_Namespace::FILE_O_READ);
+  if (!f) return;
+  int c = f.read();
+  f.close();
+  if (c == '0' || c == '1') radio_driver.setRxDutyCycle(c == '1');
+}
+
+bool t1000aRxDutyOn() { return radio_driver.isDutyActive(); }
+uint16_t t1000aRxDutyShare() { return radio_driver.getRxDutyShare(); }
+
+void t1000aRxDutyInfo(Print& out) {
+  out.printf("rxduty: %s, %s", radio_driver.getRxDutyCycle() ? "on" : "off",
+             radio_driver.isDutyActive() ? "cycling" : "continuous receive");
+  if (radio_driver.isDutyActive()) {
+    uint16_t pm = radio_driver.getRxDutyShare();
+    out.printf(", listen %lu ms / sleep %lu ms (%u.%u %%)", (unsigned long)(radio_driver.getDutyRxUs() / 1000),
+               (unsigned long)(radio_driver.getDutySleepUs() / 1000), pm / 10, pm % 10);
+  }
+  out.printf(", noise floor %d dBm, rx %lu (errors %lu), radio wake-ups %lu\r\n", radio_driver.getNoiseFloor(),
+             (unsigned long)radio_driver.getPacketsRecv(), (unsigned long)radio_driver.getPacketsRecvErrors(),
+             (unsigned long)radio_driver.getRadioWakes());
 }
 
 #ifdef T1000A_BLE_CONSOLE   // debug build: power log and console diagnostics

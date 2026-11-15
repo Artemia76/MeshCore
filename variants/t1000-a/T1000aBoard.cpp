@@ -3,6 +3,7 @@
 #include <helpers/ui/ChargeLed.h>
 
 void t1000aRadioSleep();   // target.cpp
+void t1000aRxDutyLoad();
 
 #ifdef T1000A_BLE_CONSOLE
   #include <app_pwm.h>
@@ -11,6 +12,8 @@ void t1000aRadioSleep();   // target.cpp
 
 static T1000aBoard* s_board;
 void t1000aConsoleGps(Print& out);   // target.cpp
+void t1000aRxDutySet(bool on, bool save);
+void t1000aRxDutyInfo(Print& out);
 
 static bool consoleCommand(int argc, char** argv) {
   if (!strcmp(argv[0], "bat")) {
@@ -41,6 +44,11 @@ static bool consoleCommand(int argc, char** argv) {
     BleConsole.printf("pwm1: state=%d mode=%08lx upd=%08lx prd=%lu a0=%lu a1=%lu aq=%08lx\r\n", h ? (int)h->state : -1,
                       PWM1->MODE, PWM1->UPDATE, PWM1->PRD, PWM1->CMPA0, PWM1->CMPA1, PWM1->AQCTRL);
     BleConsole.printf("aon: mux=%08lx pad1=%08lx\r\n", MCU_SUB->AON_PAD_MUX_CTL, AON->AON_PAD_CTL1);
+    return true;
+  }
+  if (!strcmp(argv[0], "rxduty")) {  // rxduty [on|off] : LoRa receive in duty cycle (saved)
+    if (argc > 1 && (!strcmp(argv[1], "on") || !strcmp(argv[1], "off"))) t1000aRxDutySet(!strcmp(argv[1], "on"), true);
+    t1000aRxDutyInfo(BleConsole);
     return true;
   }
   if (!strcmp(argv[0], "chg")) {     // charge-state candidates, to compare with the cable plugged / unplugged
@@ -167,6 +175,8 @@ bool T1000aBoard::isExternalPowered() {
 }
 
 void T1000aBoard::loop() {
+  static bool rxduty_loaded;
+  if (!rxduty_loaded) { rxduty_loaded = true; t1000aRxDutyLoad(); }   // InternalFS is up by now
 #ifdef T1000A_BLE_CONSOLE
   BleConsole.poll();
   powerLog.loop();

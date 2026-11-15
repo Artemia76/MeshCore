@@ -23,6 +23,7 @@ public:
     F_AON5      = 0x10,
     F_GPIO14    = 0x20,   // battery/sensor divider enabled
     F_BUZZER_EN = 0x40,
+    F_RX_DUTY   = 0x80,   // LoRa receive in duty cycle
   };
 
   struct Sample {

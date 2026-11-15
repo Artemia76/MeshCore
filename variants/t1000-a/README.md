@@ -18,6 +18,7 @@ This port lives in a fork ([Artemia76/MeshCore](https://github.com/Artemia76/Mes
 | Power off (long press 3 s), power on (hold 2 s) | works (see below) |
 | Repeater / room server builds | not provided yet |
 | Light sleep | partial (CPU idles between loop passes) |
+| LoRa receive in duty cycle | works, on by default (see below) |
 
 Firmwares:
 - `t1000a_companion_radio_ble`: **release**, for everyday use;
@@ -39,6 +40,21 @@ The T1000-A has a single LED (AON3), dimmable through PWM1.
 
 On the charger, MeshCore activity is shown in negative: the LED goes dark for 20 ms at the top of each 4 s cycle,
 200 ms when messages are waiting. While the cable is plugged in the CPU no longer sleeps (smooth animation).
+
+## LoRa receive duty cycle
+
+To save power, the LR1110 does not listen all the time: it sleeps between short listening windows, sized so that
+a window always catches part of the sender's preamble (RadioLib's `startReceiveDutyCycleAuto`). With MeshCore's
+32-symbol preamble at SF8 / 62.5 kHz, it listens about 37 ms and sleeps about 60 ms, about 36 % of the time.
+The datasheet receive current drops from about 7.8 mA to about 3 mA.
+
+- Packets are delivered as before: once a window catches a preamble, the radio stays awake for the whole packet.
+- Limit: nodes running MeshCore 1.15 or older send a 16-symbol preamble at SF8, and about two thirds of the packets
+  they send directly are missed. Packets relayed by newer repeaters carry the long preamble.
+- The radio is never polled over SPI while it sleeps (that would wake it up). The noise floor is measured in a
+  short continuous-receive burst at start-up and every 10 min.
+- Console: `rxduty` shows the windows and the noise floor; `rxduty off` / `rxduty on` switch it and the setting is
+  saved. With SF 9 or higher (16-symbol preamble) it falls back to continuous receive.
 
 ## Power off
 
