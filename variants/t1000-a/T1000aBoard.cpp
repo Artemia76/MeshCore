@@ -75,13 +75,11 @@ void T1000aBoard::begin() {
   pinMode(GPS_RTC_INT, OUTPUT);   digitalWrite(GPS_RTC_INT, LOW);
   pinMode(GPS_RESETB, INPUT_PULLUP);
 
-  // Woken from a real power off: stays off unless the button is held 2 s (shows the charge meanwhile)
+  // Woken from a real power off: stays off unless the button is still held (shows the charge meanwhile)
   gr551x_off_info_t off;
   bool was_off = gr551x_power_off_state(&off);
   uint16_t wake_mv = 0;
-  uint32_t off_secs = 0;
   if (was_off) {
-    off_secs = (gr551x_calendar_raw() - off.calendar) >> 15;
     offBoot(off);
     wake_mv = getBattMilliVolts();
   }
@@ -93,7 +91,7 @@ void T1000aBoard::begin() {
   s_board = this;
   BleConsole.onCommand(consoleCommand);
   powerLog.begin(this);
-  if (was_off) powerLog.setLastOff(off.batt_mv, wake_mv, off_secs);
+  if (was_off) powerLog.setLastOff(off.batt_mv, wake_mv, off.wakes);
 #endif
 }
 
@@ -107,13 +105,15 @@ bool T1000aBoard::holdButton(uint32_t ms) {
   return false;
 }
 
-// After a wake from power off, before MeshCore starts: back to sleep unless the user powers on (2 s hold).
-// With the charging cable in, the LED shows the charge (breathing / steady) until unplugged or powered on.
+// After a wake from power off, before MeshCore starts. Waking from ultra deep sleep goes through the ROM and the
+// bootloader (about 2-3 s), which filters accidental presses: the box powers on if the button is still held now,
+// so a press of about 3 s in all. Shorter presses put it back to sleep. With the charging cable in, the LED shows
+// the charge (breathing / steady) until unplugged, or until the button is held 2 s to power on.
 void T1000aBoard::offBoot(const gr551x_off_info_t& off) {
   bool on = false;
-  if (isExternalPowered()) {
+  if (cablePresent()) {
     uint32_t held = 0;
-    while (isExternalPowered()) {
+    while (cablePresent()) {
       analogWrite(PIN_LED, chargeLedLevel(millis(), digitalRead(EXT_CHRG_DETECT) == LOW));
       if (digitalRead(PIN_BUTTON1) == HIGH) {
         if (!held) held = millis();
@@ -125,7 +125,7 @@ void T1000aBoard::offBoot(const gr551x_off_info_t& off) {
     }
     digitalWrite(PIN_LED, LOW);   // back to GPIO
   } else {
-    on = holdButton(2000);
+    on = holdButton(300);
   }
   if (!on) sleepNow(off.batt_mv);
 
@@ -136,7 +136,13 @@ void T1000aBoard::offBoot(const gr551x_off_info_t& off) {
   gr551x_power_off_clear();
 }
 
-// Ultra deep sleep, woken by the button (AON0 high) or the charging cable (MSIO0 comparator, ~1 V)
+// Charging cable plugged in: MSIO0 voltage, or the charger status (AON4 low) that may have woken us
+bool T1000aBoard::cablePresent() {
+  return isExternalPowered() || digitalRead(EXT_CHRG_DETECT) == LOW;
+}
+
+// Ultra deep sleep, woken by the button (AON0 high) or by charging starting (charger status AON4 low). The MSIO
+// comparator on the cable voltage does not wake the GR5515 from this mode (tried on the board).
 void T1000aBoard::sleepNow(uint16_t batt_mv) {
   digitalWrite(GPS_EN, LOW);
   digitalWrite(GPS_VRTC_EN, LOW);
@@ -146,7 +152,7 @@ void T1000aBoard::sleepNow(uint16_t batt_mv) {
 #endif
   digitalWrite(PIN_LED, LOW);
   while (digitalRead(PIN_BUTTON1) == HIGH) delay(10);   // a held button would wake us at once
-  gr551x_wake_cfg_t cfg = {0, 1, 0, 990, batt_mv};
+  gr551x_wake_cfg_t cfg = {1u << 0, 1u << (EXT_CHRG_DETECT - 0x20), batt_mv};
   gr551x_power_off(&cfg);
 }
 
