@@ -150,6 +150,10 @@ void T1000aPowerLog::printSummary(Print& out) {
   out.printf(")  now %s\r\n", digitalRead(GPS_EN) == HIGH ? "on" : "off");
   out.printf("bat: %u mV  gpio14=%d\r\n", battMilliVolts(), digitalRead(PIN_LORA_RF_EN) == HIGH);
   out.printf("log: %u/%u samples, every %lu s\r\n", _count, SAMPLES, (unsigned long)(PERIOD_MS / 1000));
+  if (_off_mv) {
+    out.printf("last off: %luh%02lum (AON calendar, mod 36 h), bat %u -> %u mV\r\n", (unsigned long)(_off_secs / 3600),
+               (unsigned long)(_off_secs / 60 % 60), _off_mv, _on_mv);
+  }
 }
 
 void T1000aPowerLog::printLog(Print& out) {

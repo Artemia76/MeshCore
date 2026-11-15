@@ -113,6 +113,11 @@ bool T1000aSensorManager::setSettingValue(const char* name, const char* value) {
   return false;
 }
 
+// Power off: LR1110 cold sleep (no configuration kept; radio_init() runs again after the reboot)
+void t1000aRadioSleep() {
+  radio.sleep(false, 0);
+}
+
 // Packet counters for the power log
 void t1000aRadioCounts(uint32_t& rx, uint32_t& tx) {
   rx = radio_driver.getPacketsRecv();

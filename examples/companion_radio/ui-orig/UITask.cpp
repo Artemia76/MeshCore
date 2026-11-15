@@ -1,6 +1,9 @@
 #include "UITask.h"
 #include <Arduino.h>
 #include <helpers/TxtDataHelpers.h>
+#if defined(STATUS_LED_CHARGE_ANIM)
+  #include <helpers/ui/ChargeLed.h>
+#endif
 #include "../MyMesh.h"
 
 #define AUTO_OFF_MILLIS     15000   // 15 seconds
@@ -442,14 +445,11 @@ void UITask::userLedHandler() {
   if (ext_powered) {
     unsigned long ph = now % LED_CYCLE_MILLIS;
     unsigned long dark = (_msgcount > 0) ? LED_ON_MSG_MILLIS : LED_ON_MILLIS;
-    int level = 255;
+    int level;
     if (ph >= LED_CYCLE_MILLIS / 2 && ph < LED_CYCLE_MILLIS / 2 + dark) {
       level = 0;
-    } else if (ext_charging) {
-      const float lo = 0.12f;   // perceived minimum: never fully dark (1 % duty after gamma)
-      float b = lo + (1.0f - lo) * 0.5f * (1.0f - cosf(2.0f * (float)PI * ph / LED_CYCLE_MILLIS));
-      level = (int)(powf(b, 2.2f) * 255.0f + 0.5f);
-      if (level < 3) level = 3;
+    } else {
+      level = chargeLedLevel(now, ext_charging, LED_CYCLE_MILLIS);
     }
     analogWrite(PIN_STATUS_LED, level);
     led_analog = true;
