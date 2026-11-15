@@ -153,7 +153,9 @@ void t1000aRxDutyInfo(Print& out) {
     out.printf(", listen %lu ms / sleep %lu ms (%u.%u %%)", (unsigned long)(radio_driver.getDutyRxUs() / 1000),
                (unsigned long)(radio_driver.getDutySleepUs() / 1000), pm / 10, pm % 10);
   }
-  out.printf(", noise floor %d dBm\r\n", radio_driver.getNoiseFloor());
+  out.printf(", noise floor %d dBm, rx %lu (errors %lu), radio wake-ups %lu\r\n", radio_driver.getNoiseFloor(),
+             (unsigned long)radio_driver.getPacketsRecv(), (unsigned long)radio_driver.getPacketsRecvErrors(),
+             (unsigned long)radio_driver.getRadioWakes());
 }
 
 #ifdef T1000A_BLE_CONSOLE   // debug build: power log and console diagnostics

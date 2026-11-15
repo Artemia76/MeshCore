@@ -60,6 +60,13 @@ public:
     return lr()->isDutyActive() && rx + sl ? (uint16_t)((uint64_t)rx * 1000 / (rx + sl)) : 0;
   }
 
+  int recvRaw(uint8_t* bytes, int sz) override {
+    // packet received in duty cycle: the radio went back to sleep, wake it before RadioLib reads the packet
+    if (lr()->isDutyActive() && lr()->irqPending()) lr()->wakeIfAsleep();
+    return RadioLibWrapper::recvRaw(bytes, sz);
+  }
+  uint32_t getRadioWakes() const { return lr()->getWakes(); }
+
   bool startSendRaw(const uint8_t* bytes, int len) override {
     lr()->leaveDuty();                      // stage the packet in standby, not across duty-cycle sleeps
     return RadioLibWrapper::startSendRaw(bytes, len);

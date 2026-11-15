@@ -15,6 +15,7 @@ class CustomLR1110 : public LR1110 {
   bool _rxDuty = LR11X0_RX_DUTY_CYCLE;   // receive in RX duty cycle (sleep between short listening windows)
   bool _dutyActive = false;              // the last startReceive() actually started a duty cycle
   uint32_t _dutyRxUs = 0, _dutySleepUs = 0;
+  uint32_t _wakes = 0;                   // NOP wake-ups of a sleeping radio (diagnostics)
 
   static const uint32_t RX_FLAGS = RADIOLIB_IRQ_RX_DEFAULT_FLAGS | (1UL << RADIOLIB_IRQ_PREAMBLE_DETECTED);
 
@@ -54,7 +55,16 @@ class CustomLR1110 : public LR1110 {
 
     bool getRxBoostedGainMode() const { return _rx_boosted; }
 
+    // Every standby wakes the radio with a NOP first: in duty cycle it may be asleep (between windows, or after a
+    // packet received), and RadioLib's commands wait for BUSY low before pulling NSS, so they would never wake it.
+    int16_t standby() override {
+      _dutyActive = false;
+      return LR1110::standby(RADIOLIB_LR11X0_STANDBY_RC, true);
+    }
+
     int16_t startReceive() override {
+      // leave the cycle (or the sleep after a packet) before staging: the radio could sleep between commands
+      if (_dutyActive || mod->hal->digitalRead(mod->getGpio()) == mod->hal->GpioLevelHigh) standby();
       // include the PREAMBLE_DETECTED irq bit in reported flags.
       if (_rxDuty && computeDutyCycle()) {
         // Duty cycle: the LR1110 sleeps between listening windows long enough to catch the senders' preamble
@@ -86,12 +96,23 @@ class CustomLR1110 : public LR1110 {
     // several commands, each waiting for a listening window, and the radio may sleep in between (the TX buffer
     // would not survive). standby() wakes it (NOP, no BUSY wait) then sets STBY_RC once it is ready.
     void leaveDuty() {
-      if (!_dutyActive) return;
-      standby(RADIOLIB_LR11X0_STANDBY_RC, true);
-      _dutyActive = false;
+      if (_dutyActive) standby();
     }
 
-    void setRxDutyCycle(bool en) { _rxDuty = en; if (!en) _dutyActive = false; }   // left at the next startReceive()
+    // In duty cycle the LR1110 goes back to sleep once a packet is received (BUSY high). RadioLib's commands wait
+    // for BUSY low before pulling NSS, so they would never wake it: each one times out (1 s) and fails, the packet
+    // is never read, receive is never restarted and transmissions fail. Wake it with a NOP first (standby()).
+    bool wakeIfAsleep() {
+      if (mod->hal->digitalRead(mod->getGpio()) != mod->hal->GpioLevelHigh) return false;
+      standby();
+      _wakes++;
+      return true;
+    }
+    // interrupt line asserted (packet received, TX done...)
+    bool irqPending() { return mod->hal->digitalRead(mod->getIrq()) == mod->hal->GpioLevelHigh; }
+    uint32_t getWakes() const { return _wakes; }
+
+    void setRxDutyCycle(bool en) { _rxDuty = en; }   // applied at the next startReceive()
     bool getRxDutyCycle() const { return _rxDuty; }
     bool isDutyActive() const { return _dutyActive; }
     // listening window and sleep (µs, sleep including the wake-up transition)
