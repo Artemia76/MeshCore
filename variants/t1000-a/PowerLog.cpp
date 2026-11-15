@@ -3,6 +3,8 @@
 #ifdef T1000A_BLE_CONSOLE   // debug build only
 
 void t1000aRadioCounts(uint32_t& rx, uint32_t& tx);   // target.cpp
+bool t1000aRxDutyOn();
+uint16_t t1000aRxDutyShare();
 
 #define PIN_CHG_AON4  EXT_CHRG_DETECT     // charger status (low while charging), set up by T1000aBoard
 #define PIN_CHG_AON5  GR551X_PIN_AON(5)
@@ -86,6 +88,7 @@ uint8_t T1000aPowerLog::probeFlags() {
 #ifdef PIN_BUZZER_EN
   if (digitalRead(PIN_BUZZER_EN) == HIGH) f |= F_BUZZER_EN;
 #endif
+  if (t1000aRxDutyOn()) f |= F_RX_DUTY;
   return f;
 }
 
@@ -147,7 +150,12 @@ void T1000aPowerLog::printSummary(Print& out) {
   out.print("  advertising "); printPct(out, t.adv, t.total);
   out.printf("  (open now: %u)\r\n", s.ble_connections);
   out.printf("lora: tx %lu ms (", (unsigned long)t.tx_ms); printPct(out, (uint64_t)t.tx_ms << 15, t.total * 1000);
-  out.printf(")  pkts rx %lu tx %lu\r\n", (unsigned long)t.rx_pkts, (unsigned long)t.tx_pkts);
+  out.printf(")  pkts rx %lu tx %lu", (unsigned long)t.rx_pkts, (unsigned long)t.tx_pkts);
+  if (t1000aRxDutyOn()) {
+    uint16_t pm = t1000aRxDutyShare();
+    out.printf("  rx duty %u.%u %%", pm / 10, pm % 10);
+  }
+  out.print("\r\n");
   out.printf("gps: on %lu s (", (unsigned long)(t.gps_ms / 1000)); printPct(out, (uint64_t)t.gps_ms << 15, t.total * 1000);
   out.printf(")  now %s\r\n", digitalRead(GPS_EN) == HIGH ? "on" : "off");
   out.printf("bat: %u mV  gpio14=%d\r\n", battMilliVolts(), digitalRead(PIN_LORA_RF_EN) == HIGH);
