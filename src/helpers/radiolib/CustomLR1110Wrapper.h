@@ -60,6 +60,11 @@ public:
     return lr()->isDutyActive() && rx + sl ? (uint16_t)((uint64_t)rx * 1000 / (rx + sl)) : 0;
   }
 
+  bool startSendRaw(const uint8_t* bytes, int len) override {
+    lr()->leaveDuty();                      // stage the packet in standby, not across duty-cycle sleeps
+    return RadioLibWrapper::startSendRaw(bytes, len);
+  }
+
   // Before transmitting: asleep in its cycle (BUSY high) means nothing is being received, without SPI
   bool isReceiving() override {
     if (lr()->isDutyActive()) {
@@ -70,6 +75,7 @@ public:
   }
 
   void setParams(float freq, float bw, uint8_t sf, uint8_t cr) override {
+    ((CustomLR1110 *)_radio)->leaveDuty();
     ((CustomLR1110 *)_radio)->setFrequency(freq);
     ((CustomLR1110 *)_radio)->setSpreadingFactor(sf);
     ((CustomLR1110 *)_radio)->setBandwidth(bw);

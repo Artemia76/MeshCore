@@ -82,6 +82,15 @@ class CustomLR1110 : public LR1110 {
       return true;
     }
 
+    // Leave the duty cycle cleanly before transmitting or reconfiguring: RadioLib stages a transmission with
+    // several commands, each waiting for a listening window, and the radio may sleep in between (the TX buffer
+    // would not survive). standby() wakes it (NOP, no BUSY wait) then sets STBY_RC once it is ready.
+    void leaveDuty() {
+      if (!_dutyActive) return;
+      standby(RADIOLIB_LR11X0_STANDBY_RC, true);
+      _dutyActive = false;
+    }
+
     void setRxDutyCycle(bool en) { _rxDuty = en; if (!en) _dutyActive = false; }   // left at the next startReceive()
     bool getRxDutyCycle() const { return _rxDuty; }
     bool isDutyActive() const { return _dutyActive; }

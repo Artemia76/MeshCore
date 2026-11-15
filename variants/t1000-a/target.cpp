@@ -117,11 +117,8 @@ bool T1000aSensorManager::setSettingValue(const char* name, const char* value) {
 // Power off: LR1110 cold sleep (no configuration kept; radio_init() runs again after the reboot)
 void t1000aRadioSleep() {
   // RadioLib sends SetSleep without waiting for BUSY low: in the RX duty cycle's sleep phase that NSS edge only
-  // wakes the LR1110 and the command is lost. So leave the cycle first (standby, also sent without waiting).
-  if (radio.isDutyActive()) {
-    radio.standby();                    // its NSS edge wakes the radio (intended here); wait until it is ready
-    for (uint32_t t0 = millis(); digitalRead(P_LORA_BUSY) == HIGH && millis() - t0 < 20; ) { }
-  }
+  // wakes the LR1110 and the command is lost. So leave the cycle first.
+  radio.leaveDuty();
   radio.sleep(false, 0);
 }
 
