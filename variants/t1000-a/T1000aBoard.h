@@ -12,6 +12,11 @@ class T1000aBoard : public GR551xBoard {
   uint32_t _ext_power_at = 0;
   bool _ext_power_valid = false;
 
+  bool holdButton(uint32_t ms);
+  bool cablePresent();
+  void offBoot(const gr551x_off_info_t& off);
+  [[noreturn]] void sleepNow(uint16_t batt_mv);
+
 public:
   void begin() override;
   void loop() override;

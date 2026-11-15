@@ -1,6 +1,9 @@
 #include "T1000aBoard.h"
 #include <gr551x_ble.h>
 #include <app_pwm.h>
+#include <helpers/ui/ChargeLed.h>
+
+void t1000aRadioSleep();   // target.cpp
 
 #ifdef T1000A_BLE_CONSOLE
   #include <BleConsole.h>
@@ -72,6 +75,15 @@ void T1000aBoard::begin() {
   pinMode(GPS_RTC_INT, OUTPUT);   digitalWrite(GPS_RTC_INT, LOW);
   pinMode(GPS_RESETB, INPUT_PULLUP);
 
+  // Woken from a real power off: stays off unless the button is still held (shows the charge meanwhile)
+  gr551x_off_info_t off;
+  bool was_off = gr551x_power_off_state(&off);
+  uint16_t wake_mv = 0;
+  if (was_off) {
+    offBoot(off);
+    wake_mv = getBattMilliVolts();
+  }
+
 #ifdef T1000A_BLE_CONSOLE
   // Development console (Goodix UART service): "dfu" restarts into the BLE bootloader, Serial output
   // (MESH_DEBUG) is mirrored there. Not advertised: the companion service owns advertising.
@@ -79,7 +91,69 @@ void T1000aBoard::begin() {
   s_board = this;
   BleConsole.onCommand(consoleCommand);
   powerLog.begin(this);
+  if (was_off) powerLog.setLastOff(off.batt_mv, wake_mv, off.wakes);
 #endif
+}
+
+// Button held for `ms` from now (polled; the core keeps the watchdog and the 6 s DFU hold running)
+bool T1000aBoard::holdButton(uint32_t ms) {
+  uint32_t t0 = millis();
+  while (digitalRead(PIN_BUTTON1) == HIGH) {
+    if (millis() - t0 >= ms) return true;
+    delay(10);
+  }
+  return false;
+}
+
+// After a wake from power off, before MeshCore starts. Waking from ultra deep sleep goes through the ROM and the
+// bootloader (about 2-3 s), which filters accidental presses: the box powers on if the button is still held now,
+// so a press of about 3 s in all. Shorter presses put it back to sleep. With the charging cable in, the LED shows
+// the charge (breathing / steady) until unplugged, or until the button is held 2 s to power on.
+void T1000aBoard::offBoot(const gr551x_off_info_t& off) {
+  bool on = false;
+  if (cablePresent()) {
+    uint32_t held = 0;
+    while (cablePresent()) {
+      analogWrite(PIN_LED, chargeLedLevel(millis(), digitalRead(EXT_CHRG_DETECT) == LOW));
+      if (digitalRead(PIN_BUTTON1) == HIGH) {
+        if (!held) held = millis();
+        else if (millis() - held >= 2000) { on = true; break; }
+      } else {
+        held = 0;
+      }
+      delay(10);
+    }
+    digitalWrite(PIN_LED, LOW);   // back to GPIO
+  } else {
+    on = holdButton(300);
+  }
+  if (!on) sleepNow(off.batt_mv);
+
+  for (int i = 0; i < 2; i++) {   // powering on
+    digitalWrite(PIN_LED, HIGH); delay(150);
+    digitalWrite(PIN_LED, LOW);  delay(150);
+  }
+  gr551x_power_off_clear();
+}
+
+// Charging cable plugged in: MSIO0 voltage, or the charger status (AON4 low) that may have woken us
+bool T1000aBoard::cablePresent() {
+  return isExternalPowered() || digitalRead(EXT_CHRG_DETECT) == LOW;
+}
+
+// Ultra deep sleep, woken by the button (AON0 high) or by charging starting (charger status AON4 low). The MSIO
+// comparator on the cable voltage does not wake the GR5515 from this mode (tried on the board).
+void T1000aBoard::sleepNow(uint16_t batt_mv) {
+  digitalWrite(GPS_EN, LOW);
+  digitalWrite(GPS_VRTC_EN, LOW);
+  digitalWrite(PIN_LORA_RF_EN, LOW);
+#ifdef PIN_BUZZER_EN
+  digitalWrite(PIN_BUZZER_EN, LOW);
+#endif
+  digitalWrite(PIN_LED, LOW);
+  while (digitalRead(PIN_BUTTON1) == HIGH) delay(10);   // a held button would wake us at once
+  gr551x_wake_cfg_t cfg = {1u << 0, 1u << (EXT_CHRG_DETECT - 0x20), batt_mv};
+  gr551x_power_off(&cfg);
 }
 
 bool T1000aBoard::isExternalPowered() {
@@ -100,22 +174,17 @@ void T1000aBoard::loop() {
   GR551xBoard::loop();
 }
 
-// Long press (3 s, UITask) -> "off". Holding on until 6 s restarts into the BLE DFU bootloader instead
-// (handled by the platform variant). Soft off for now: GNSS and buzzer off, LR1110 held in reset, BLE stopped,
-// the CPU waits for the next button press and then reboots.
+// Long press (3 s, UITask) -> real power off. Holding on until 6 s restarts into the BLE DFU bootloader instead
+// (handled by the platform variant). Every part goes to its lowest state, then the GR5515 enters ultra deep sleep;
+// power on = button held 2 s (offBoot).
 void T1000aBoard::powerOff() {
+  uint16_t mv = getBattMilliVolts();   // before the measurement divider is cut
   digitalWrite(GPS_EN, LOW);
-  digitalWrite(P_LORA_RESET, LOW);
-#ifdef PIN_BUZZER_EN
-  digitalWrite(PIN_BUZZER_EN, LOW);
-#endif
+  t1000aRadioSleep();                  // LR1110 cold sleep; GNSS (with its backup supply), divider, buzzer: sleepNow()
   gr551x_ble_stop();
 
   digitalWrite(PIN_LED, HIGH);
   while (digitalRead(PIN_BUTTON1) == HIGH) delay(10);   // released before 6 s: really go off
   digitalWrite(PIN_LED, LOW);
-  delay(500);
-
-  while (digitalRead(PIN_BUTTON1) != HIGH) delay(50);
-  reboot();
+  sleepNow(mv);
 }

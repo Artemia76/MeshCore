@@ -47,6 +47,9 @@ public:
   void printSummary(Print& out);
   void printLog(Print& out);
   void printCharge(Print& out);
+  // Last real power off: battery when it went off and when it came back (no clock survives the power off)
+  // and how many wakes put it straight back to sleep meanwhile (short presses, or a spurious wake source)
+  void setLastOff(uint16_t off_mv, uint16_t on_mv, uint16_t wakes) { _off_mv = off_mv; _on_mv = on_mv; _off_wakes = wakes; }
 
 private:
   struct Totals {         // cumulative since reset
@@ -58,6 +61,7 @@ private:
   mesh::MainBoard* _board = nullptr;
   Sample _log[SAMPLES];
   uint16_t _head = 0, _count = 0;
+  uint16_t _off_mv = 0, _on_mv = 0, _off_wakes = 0;
 
   uint32_t _last_ms = 0, _sample_due_ms = 0;
   bool _gps_on = false;
