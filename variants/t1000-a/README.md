@@ -15,7 +15,7 @@ This port lives in a fork ([Artemia76/MeshCore](https://github.com/Artemia76/Mes
 | Companion over BLE (MeshCore apps), PIN pairing | works (default PIN `123456`) |
 | GNSS (AG3335), battery voltage, buzzer, status LED, button | works |
 | Charge indication on the status LED, external power detection | works (see below) |
-| Soft power off (long press 3 s) | works |
+| Power off (long press 3 s), power on (hold 2 s) | works (see below) |
 | Repeater / room server builds | not provided yet |
 | Light sleep | partial (CPU idles between loop passes) |
 
@@ -33,6 +33,21 @@ The T1000-A has a single LED (AON3), dimmable through PWM1.
 
 On the charger, MeshCore activity is shown in negative: the LED goes dark for 20 ms at the top of each 4 s cycle,
 200 ms when messages are waiting. While the cable is plugged in the CPU no longer sleeps (smooth animation).
+
+## Power off
+
+Hold the button 3 s (more than 8 s after start-up) to switch off:
+- GNSS (with its backup supply), the battery measurement divider and the buzzer are cut, and the LR1110 goes to
+  cold sleep;
+- the GR5515 enters ultra deep sleep, woken by the button or when charging starts.
+
+To switch on, hold the button about 3 s. Every wake goes through the Seeed bootloader, which blinks the LED twice;
+the box then powers on (two more blinks) only if the button is still held, so a shorter press puts it straight
+back to sleep. When charging starts while off, the LED shows the charge
+(breathing, then steady) without starting MeshCore; hold the button 2 s to switch on. A box that is off and
+already full does not wake when plugged in (the charger status does not change). Holding 6 s still restarts into
+the DFU bootloader. After a power off, the console's `power` command shows the battery voltage when it went off
+and when it came back, and how many wakes went straight back to sleep meanwhile.
 
 ## Flashing
 
