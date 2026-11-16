@@ -19,7 +19,13 @@ This port lives in a fork ([Artemia76/MeshCore](https://github.com/Artemia76/Mes
 | Repeater / room server builds | not provided yet |
 | Light sleep | partial (CPU idles between loop passes) |
 
-Firmware: `t1000a_companion_radio_ble`.
+Firmwares:
+- `t1000a_companion_radio_ble`: **release**, for everyday use;
+- `t1000a_companion_radio_ble_debug`: the same plus the development tools (BLE console, power log, diagnostics,
+  see below). It uses about 7.5 KB more RAM.
+
+The console is not protected by the companion's PIN (anyone in range could restart the device into the
+bootloader), so the release has none.
 
 ## Status LED
 
@@ -46,7 +52,7 @@ the box then powers on (two more blinks) only if the button is still held, so a 
 back to sleep. When charging starts while off, the LED shows the charge
 (breathing, then steady) without starting MeshCore; hold the button 2 s to switch on. A box that is off and
 already full does not wake when plugged in (the charger status does not change). Holding 6 s still restarts into
-the DFU bootloader. After a power off, the console's `power` command shows the battery voltage when it went off
+the DFU bootloader. After a power off, the debug console's `power` command shows the battery voltage when it went off
 and when it came back, and how many wakes went straight back to sleep meanwhile.
 
 ## Flashing
@@ -56,20 +62,23 @@ which is never overwritten. You need a Linux PC with BlueZ, Python 3 and the `bl
 [`t1000_ble.py`](https://github.com/Artemia76/platform-gr551x/blob/v0.1.0/tools/t1000_ble.py).
 
 1. Get `firmware_dfu.bin` from the fork's releases, or build it:
-   `pio run -e t1000a_companion_radio_ble` → `.pio/build/t1000a_companion_radio_ble/firmware_dfu.bin`.
+   `pio run -e t1000a_companion_radio_ble` → `.pio/build/t1000a_companion_radio_ble/firmware_dfu.bin`
+   (debug: `-e t1000a_companion_radio_ble_debug`).
 2. Put the device in the bootloader (it advertises as `SENSECAP_GR_DFU_xxxxxx`):
    - from the stock Seeed firmware: `t1000_ble.py flash firmware_dfu.bin --enter-dfu <serial>-T1000`
      (sends `AT+DFU_ENTER`; press the button long to wake the Seeed firmware's BLE first);
-   - from MeshCore: CLI command `start ota`, or hold the button **6 s**;
+   - from the MeshCore release: hold the button **6 s** (the LED stays on for a second);
+   - from the MeshCore debug build: `t1000_ble.py flash firmware_dfu.bin --enter-dfu <BLE name>` (console `dfu`),
+     or hold the button 6 s;
    - last resort: unplug the magnetic cable, hold the button, plug the cable back while holding.
 3. `t1000_ble.py flash firmware_dfu.bin --name SENSECAP_GR_DFU -t 600`
 
 Safety net: after 3 consecutive short boots (crash or watchdog before 2 min of uptime) the firmware restarts into
 the bootloader by itself.
 
-## Development console and power log
+## Development console and power log (debug build)
 
-The firmware exposes a text console on the Goodix UART service (not advertised: connect to the companion's BLE
+The debug build exposes a text console on the Goodix UART service (not advertised: connect to the companion's BLE
 name), e.g. `t1000_ble.py console --name <name>`. Besides `bat`, `gps`, `beep`, `blelog` and `dfu`:
 
 - `power`: time spent in each state since the last reset — CPU idle, BLE connected / advertising, LoRa transmit

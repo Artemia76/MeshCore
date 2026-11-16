@@ -1,5 +1,7 @@
 #include "PowerLog.h"
 
+#ifdef T1000A_BLE_CONSOLE   // debug build only
+
 void t1000aRadioCounts(uint32_t& rx, uint32_t& tx);   // target.cpp
 
 #define PIN_CHG_AON4  EXT_CHRG_DETECT     // charger status (low while charging), set up by T1000aBoard
@@ -171,3 +173,5 @@ void T1000aPowerLog::printCharge(Print& out) {
   out.printf("chg: aon4=%d aon5=%d msio0=%d mV bat=%u mV\r\n", digitalRead(PIN_CHG_AON4) == HIGH,
              digitalRead(PIN_CHG_AON5) == HIGH, mv, battMilliVolts());
 }
+
+#endif
