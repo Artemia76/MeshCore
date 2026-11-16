@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef T1000A_BLE_CONSOLE   // debug build only
+
 #include <Arduino.h>
 #include <MeshCore.h>
 
@@ -75,3 +77,5 @@ private:
   uint8_t probeFlags();
   void takeSample();
 };
+
+#endif

@@ -1,11 +1,11 @@
 #include "T1000aBoard.h"
 #include <gr551x_ble.h>
-#include <app_pwm.h>
 #include <helpers/ui/ChargeLed.h>
 
 void t1000aRadioSleep();   // target.cpp
 
 #ifdef T1000A_BLE_CONSOLE
+  #include <app_pwm.h>
   #include <BleConsole.h>
   #include <helpers/gr551x/SerialBLEInterface.h>
 

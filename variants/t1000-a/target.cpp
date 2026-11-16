@@ -118,6 +118,7 @@ void t1000aRadioSleep() {
   radio.sleep(false, 0);
 }
 
+#ifdef T1000A_BLE_CONSOLE   // debug build: power log and console diagnostics
 // Packet counters for the power log
 void t1000aRadioCounts(uint32_t& rx, uint32_t& tx) {
   rx = radio_driver.getPacketsRecv();
@@ -130,3 +131,4 @@ void t1000aConsoleGps(Print& out) {
              (long)nmea.satellitesCount(), (long)nmea.getLatitude(), (long)nmea.getLongitude(), (unsigned long)Serial1.rxBytes(),
              digitalRead(GPS_EN) == HIGH);
 }
+#endif
