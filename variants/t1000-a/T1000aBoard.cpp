@@ -17,7 +17,29 @@ void t1000aRxDutyInfo(Print& out);
 void t1000aRadioDiag(Print& out, bool reset);   // target.cpp
 void t1000aLrProbe(Print& out, int argc, char** argv);   // LrProbe.cpp
 
+#include <diag.h>
+#include <stdarg.h>
+static void diagOut(const char* fmt, ...) {
+  char b[160];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(b, sizeof(b), fmt, ap);
+  va_end(ap);
+  BleConsole.print(b);
+}
+
 static bool consoleCommand(int argc, char** argv) {
+  if (!strcmp(argv[0], "hang")) {    // hang : blocks the main loop (IRQs on) to test the watchdog capture
+    BleConsole.print("hang: blocage volontaire, redemarrage par le chien de garde dans ~8 s\r\n");
+    delay(300);
+    volatile uint32_t spin = 0;
+    while (true) spin++;
+  }
+  if (!strcmp(argv[0], "diag")) {    // diag [clear] : cause of the last reboot, last fault, watchdog capture
+    diag_report(diagOut);
+    if (argc > 1 && !strcmp(argv[1], "clear")) { diag_begin(); BleConsole.print("diag: efface\r\n"); }
+    return true;
+  }
   if (!strcmp(argv[0], "bat")) {
     int raw = analogReadMilliVolts(PIN_BATTERY);
     BleConsole.printf("battery: %u mV (MSIO4 %d mV)\r\n", s_board->getBattMilliVolts(), raw);
