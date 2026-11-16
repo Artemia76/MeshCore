@@ -147,8 +147,9 @@ void testBusy() {
 void testCmdDuringBusy() {
   standbyRc();
   uint8_t img[2] = {0xD7, 0xDB}, x1 = 1;
-  cmd(0x0111, img, 2, true);                       // long command: BUSY high for a while
-  delayMicroseconds(20);
+  uint8_t ci[4] = {0x01, 0x11, img[0], img[1]};
+  xfer(ci, nullptr, 4, true, false);               // CalibImage (≈ 6.5 ms), without waiting for BUSY low
+  delayMicroseconds(100);
   bool was_busy = busy();
   uint8_t tx[3] = {0x01, 0x1C, x1};
   xfer(tx, nullptr, 3, false, false);              // SetStandby XOSC sent while BUSY is high
@@ -221,7 +222,7 @@ uint32_t ticks(float ms) { return (uint32_t)(ms * 32.768f + 0.5f); }
 void startDuty(float rx_ms, float sl_ms) {
   standbyRc();
   clearIrq();
-  uint8_t irq[8] = {0, 0, 0x04, 0xF8, 0, 0, 0, 0};    // RxDone|Preamble|Header|HeaderErr|CrcErr|Timeout -> DIO9
+  uint8_t irq[8] = {0, 0, 0x04, 0xC8, 0, 0, 0, 0};    // RxDone|HeaderErr|CrcErr|Timeout -> DIO9 (not preamble/header)
   cmd(0x0113, irq, 8);
   uint32_t r = ticks(rx_ms), s = ticks(sl_ms);
   uint8_t p[7] = {(uint8_t)(r >> 16), (uint8_t)(r >> 8), (uint8_t)r, (uint8_t)(s >> 16), (uint8_t)(s >> 8), (uint8_t)s, 0};
@@ -253,8 +254,22 @@ void testDuty(unsigned secs, float rx_ms, float sl_ms) {
   uint8_t ps[4];
   readCmd(0x0204, nullptr, 0, ps, 3);
   out->printf("  rx_len=%u rx_off=%u rssi=-%u/2 snr=%d/4\r\n", r[1], r[2], ps[1], (int8_t)ps[2]);
+  uint8_t rb[2] = {r[2], 8}, d1[9], d2[9];
+  readCmd(0x010A, rb, 2, d1, 8);
+  out->printf("  tampon RX: %02x %02x %02x %02x %02x %02x %02x %02x\r\n", d1[1], d1[2], d1[3], d1[4], d1[5], d1[6], d1[7], d1[8]);
   busyChronogram(300, 12);                          // does the cycle go on after RxDone?
   printStatus("300 ms plus tard", getStatus());
+  // does the RX buffer survive a warm sleep (UM §10.3: data buffer cleared in sleep)?
+  uint8_t sl[7] = {0x01, 0x1B, 1, 0, 0, 0, 0};
+  xfer(sl, nullptr, 7, true, false);
+  delay(20);
+  uint8_t nop[2] = {0, 0};
+  xfer(nop, nullptr, 2, false, false);
+  waitBusyLow();
+  readCmd(0x010A, rb, 2, d2, 8);
+  int same = 0;
+  for (int i = 1; i <= 8; i++) same += d1[i] == d2[i];
+  out->printf("  tampon RX apres sommeil chaud: %02x %02x %02x %02x ... (%d/8 identiques)\r\n", d2[1], d2[2], d2[3], d2[4], same);
 }
 
 void testDutyNss(float rx_ms, float sl_ms) {
