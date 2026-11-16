@@ -299,6 +299,43 @@ void testDutyBuffer(float rx_ms, float sl_ms) {
   printStatus("status", getStatus());
 }
 
+// Preamble length of received frames: continuous RX, time from PreambleDetected to HeaderValid. Frames with a
+// 32-symbol preamble show ≈ 16 symbols more than 16-symbol ones (SF8/62.5 kHz: 4.1 ms per symbol).
+void testPreamble(unsigned secs, float sym_ms) {
+  standbyRc();
+  clearIrq();
+  uint8_t irq[8] = {0, 0, 0x00, 0xF8, 0, 0, 0, 0};    // RxDone|Preamble|Header|HeaderErr|CrcErr -> DIO9
+  cmd(0x0113, irq, 8);
+  uint8_t rx[3] = {0xFF, 0xFF, 0xFF};
+  cmd(0x0209, rx, 3);
+  out->printf("pre: ecoute continue %u s ; symbole = %lu us\r\n", secs, (unsigned long)(sym_ms * 1000));
+  unsigned long t0 = millis(), tp = 0, th = 0;
+  int n = 0;
+  while (millis() - t0 < secs * 1000UL) {
+    gr551x_service();
+    if (!irqLine()) continue;
+    unsigned long now = micros();
+    Status s = getStatus();
+    uint8_t clr[4] = {0, 0, 0, (uint8_t)(s.irq & 0xF8)};
+    cmd(0x0114, clr, 4);
+    if ((s.irq & (1 << 4)) && !tp) tp = now;
+    if ((s.irq & (1 << 5)) && !th) th = now;
+    if (s.irq & ((1 << 3) | (1 << 6) | (1 << 7))) {
+      uint8_t r[3], ps[4], d[5];
+      readCmd(0x0203, nullptr, 0, r, 2);
+      readCmd(0x0204, nullptr, 0, ps, 3);
+      uint8_t rb[2] = {r[2], 4};
+      readCmd(0x010A, rb, 2, d, 4);
+      long dt = (tp && th) ? (long)(th - tp) : -1;
+      out->printf("  #%d t=%lus pre->hdr=%ld us (%ld/10 sym) len=%u rssi=-%u/2 snr=%d/4 hdr=%02x path=%02x %s\r\n", ++n,
+                  (millis() - t0) / 1000, dt, dt < 0 ? -1 : (long)(dt / (sym_ms * 100)), r[1], ps[1], (int8_t)ps[2],
+                  d[1], d[2], (s.irq & (1 << 7)) ? "CRC" : (s.irq & (1 << 6)) ? "HDRERR" : "");
+      tp = th = 0;
+    }
+  }
+  out->printf("pre: %d trames\r\n", n);
+}
+
 }  // namespace
 
 void t1000aLrProbe(Print& o, int argc, char** argv) {
@@ -312,9 +349,10 @@ void t1000aLrProbe(Print& o, int argc, char** argv) {
   else if (!strcmp(t, "fallback")) testFallback();
   else if (!strcmp(t, "duty")) testDuty(argc > 2 ? atoi(argv[2]) : 120, rx, sl);
   else if (!strcmp(t, "dutynss")) testDutyNss(argc > 2 ? atof(argv[2]) : 36.8f, argc > 3 ? atof(argv[3]) : 59.5f);
+  else if (!strcmp(t, "pre")) testPreamble(argc > 2 ? atoi(argv[2]) : 300, argc > 3 ? atof(argv[3]) : 4.096f);
   else if (!strcmp(t, "dutybuf")) testDutyBuffer(argc > 2 ? atof(argv[2]) : 36.8f, argc > 3 ? atof(argv[3]) : 59.5f);
   else {
-    o.print("lr ver | busy | cmdbusy | sleep [warm|cold] | fallback | duty [s] [rx_ms sl_ms] | dutynss | dutybuf\r\n");
+    o.print("lr ver | busy | cmdbusy | sleep [warm|cold] | fallback | duty [s] [rx_ms sl_ms] | dutynss | dutybuf | pre [s] [sym_ms]\r\n");
     return;
   }
   o.print("lr: fin, redemarrage pour rendre la radio a MeshCore\r\n");
