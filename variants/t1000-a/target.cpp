@@ -125,6 +125,7 @@ void t1000aRadioSleep() {
 // RX duty cycle (console "rxduty", power log). The setting is kept in InternalFS.
 #define RXDUTY_FILE "/t1000a_rxduty"
 
+#ifdef T1000A_BLE_CONSOLE   // console "rxduty on|off"
 void t1000aRxDutySet(bool on, bool save) {
   radio_driver.setRxDutyCycle(on);
   if (!save) return;
@@ -132,6 +133,7 @@ void t1000aRxDutySet(bool on, bool save) {
   Adafruit_LittleFS_Namespace::File f = InternalFS.open(RXDUTY_FILE, Adafruit_LittleFS_Namespace::FILE_O_WRITE);
   if (f) { f.write((uint8_t)(on ? '1' : '0')); f.close(); }
 }
+#endif
 
 // Saved setting, applied once the file system is up (radio_init() runs before InternalFS.begin())
 void t1000aRxDutyLoad() {
@@ -145,6 +147,7 @@ void t1000aRxDutyLoad() {
 bool t1000aRxDutyOn() { return radio_driver.isDutyActive(); }
 uint16_t t1000aRxDutyShare() { return radio_driver.getRxDutyShare(); }
 
+#ifdef T1000A_BLE_CONSOLE   // debug build: power log and console diagnostics
 void t1000aRxDutyInfo(Print& out) {
   out.printf("rxduty: %s, %s", radio_driver.getRxDutyCycle() ? "on" : "off",
              radio_driver.isDutyActive() ? "cycling" : "continuous receive");
@@ -158,7 +161,6 @@ void t1000aRxDutyInfo(Print& out) {
              (unsigned long)radio_driver.getRadioWakes());
 }
 
-#ifdef T1000A_BLE_CONSOLE   // debug build: power log and console diagnostics
 // Packet counters for the power log
 void t1000aRadioCounts(uint32_t& rx, uint32_t& tx) {
   rx = radio_driver.getPacketsRecv();
@@ -173,7 +175,7 @@ void t1000aRadioDiag(Print& out, bool reset) {
 
 // Console diagnostics ("gps")
 void t1000aConsoleGps(Print& out) {
-  out.printf("gps: on=%d fix=%d sats=%ld lat=%ld lon=%ld uart_rx=%lu octets en=%d\r\n", nmea.isGpsOn(), nmea.hasValidFix(),
+  out.printf("gps: on=%d fix=%d sats=%ld lat=%ld lon=%ld uart_rx=%lu bytes en=%d\r\n", nmea.isGpsOn(), nmea.hasValidFix(),
              (long)nmea.satellitesCount(), (long)nmea.getLatitude(), (long)nmea.getLongitude(), (unsigned long)Serial1.rxBytes(),
              digitalRead(GPS_EN) == HIGH);
   out.printf("gps: sky=%u (max %u in window) gsv=%lu nosky_streak=%u period=%lus %s %lus\r\n", nmea.skyLast(),

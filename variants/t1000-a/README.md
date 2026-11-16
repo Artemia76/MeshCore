@@ -44,9 +44,10 @@ On the charger, MeshCore activity is shown in negative: the LED goes dark for 20
 ## LoRa receive duty cycle
 
 To save power, the LR1110 does not listen all the time: it sleeps between short listening windows, sized so that
-a window always catches part of the sender's preamble (RadioLib's `startReceiveDutyCycleAuto`). With MeshCore's
-32-symbol preamble at SF8 / 62.5 kHz, it listens about 37 ms and sleeps about 60 ms, about 36 % of the time.
-The datasheet receive current drops from about 7.8 mA to about 3 mA.
+a window always catches part of the sender's preamble (RadioLib's calculation), lengthened so that a preamble
+detected early is still followed by its header within the LR1110's timeout (2 × window + sleep, UM §7.2.6).
+With MeshCore's 32-symbol preamble at SF8 / 62.5 kHz, it listens about 60 ms and sleeps about 65 ms, about 48 %
+of the time. The datasheet receive current drops from about 7.8 mA to about 4 mA.
 
 - Packets are delivered as before: once a window catches a preamble, the radio stays awake for the whole packet.
 - Limit: nodes running MeshCore 1.15 or older send a 16-symbol preamble at SF8, and about two thirds of the packets
@@ -75,7 +76,7 @@ and when it came back, and how many wakes went straight back to sleep meanwhile.
 
 The T1000-A has no USB data port: flashing is done over **Bluetooth**, through the stock Seeed/Goodix bootloader,
 which is never overwritten. You need a Linux PC with BlueZ, Python 3 and the `bleak` package, plus
-[`t1000_ble.py`](https://github.com/Artemia76/platform-gr551x/blob/v0.1.0/tools/t1000_ble.py).
+[`t1000_ble.py`](https://github.com/Artemia76/platform-gr551x/blob/v0.2.0/tools/t1000_ble.py).
 
 1. Get `firmware_dfu.bin` from the fork's releases, or build it:
    `pio run -e t1000a_companion_radio_ble` → `.pio/build/t1000a_companion_radio_ble/firmware_dfu.bin`

@@ -5,6 +5,8 @@
 #include "LR11x0Reset.h"
 
 class CustomLR1110Wrapper : public RadioLibWrapper {
+  CustomLR1110* lr() const { return (CustomLR1110*)_radio; }
+#ifdef LR11X0_RX_DUTY_CYCLE
   // RX duty cycle: no SPI access while the radio sleeps between windows (it would wake up and leave the cycle).
   // The noise floor is measured in short continuous-receive bursts instead (first at start-up, then every 10 min).
   static const uint32_t FLOOR_RECAL_MS = 600000UL;
@@ -13,8 +15,8 @@ class CustomLR1110Wrapper : public RadioLibWrapper {
   bool _floorKnown = false;
   uint32_t _floorAt = 0;
 
-  CustomLR1110* lr() const { return (CustomLR1110*)_radio; }
   bool dutyQuiet() const { return lr()->isDutyActive() && !_calibrating; }   // no polling allowed now
+#endif
 
 public:
   CustomLR1110Wrapper(CustomLR1110& radio, mesh::MainBoard& board) : RadioLibWrapper(radio, board) { }
@@ -38,7 +40,7 @@ public:
                  (unsigned long)d.errs, d.lastErr, (unsigned long)(d.maxUs / 1000),
                  (unsigned long)(d.calls ? d.totalUs / d.calls : 0));
     }
-    out.printf("  loop (temps actif entre deux tours): max=%lums >200ms:%lu >1s:%lu | tx started=%lu done=%lu fail=%lu max=%lums\r\n",
+    out.printf("  loop (active time between passes): max=%lums >200ms:%lu >1s:%lu | tx started=%lu done=%lu fail=%lu max=%lums\r\n",
                (unsigned long)_gapMax, (unsigned long)_gap200, (unsigned long)_gap1s, (unsigned long)_txStarted,
                (unsigned long)_txDone, (unsigned long)_txFail, (unsigned long)_txMax);
     out.print("  gaps:");
@@ -64,8 +66,9 @@ public:
   }
 #endif
 
+#ifdef LR11X0_RX_DUTY_CYCLE
   void loop() override {
-#ifdef LR11X0_DIAG
+#if defined(LR11X0_DIAG) && defined(GR551X_PLATFORM)
     // active time between two passes = elapsed - CPU idle sleep (the CPU sleeps up to 1 s between passes)
     gr551x_power_stats_t ps;
     gr551x_power_stats_get(&ps);
@@ -143,9 +146,12 @@ public:
     }
     return RadioLibWrapper::isReceiving();
   }
+#endif
 
   void setParams(float freq, float bw, uint8_t sf, uint8_t cr) override {
+#ifdef LR11X0_RX_DUTY_CYCLE
     ((CustomLR1110 *)_radio)->leaveDuty();
+#endif
     ((CustomLR1110 *)_radio)->setFrequency(freq);
     ((CustomLR1110 *)_radio)->setSpreadingFactor(sf);
     ((CustomLR1110 *)_radio)->setBandwidth(bw);
@@ -162,11 +168,15 @@ public:
     return crc;
   }
   bool isReceivingPacket() override {
+#ifdef LR11X0_RX_DUTY_CYCLE
     if (dutyQuiet()) return false;          // noise-floor sampling / AGC reset: no SPI during the duty cycle
+#endif
     return ((CustomLR1110 *)_radio)->isReceiving();
   }
   float getCurrentRSSI() override {
+#ifdef LR11X0_RX_DUTY_CYCLE
     if (dutyQuiet()) return _noise_floor;   // last measured floor (int.thresh compares against it)
+#endif
     float rssi = -110;
     ((CustomLR1110 *)_radio)->getRssiInstDiag(&rssi);
     return rssi;

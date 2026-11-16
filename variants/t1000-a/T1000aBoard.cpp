@@ -30,14 +30,14 @@ static void diagOut(const char* fmt, ...) {
 
 static bool consoleCommand(int argc, char** argv) {
   if (!strcmp(argv[0], "hang")) {    // hang : blocks the main loop (IRQs on) to test the watchdog capture
-    BleConsole.print("hang: blocage volontaire, redemarrage par le chien de garde dans ~8 s\r\n");
+    BleConsole.print("hang: main loop stuck on purpose, watchdog reboot in ~8 s\r\n");
     delay(300);
     volatile uint32_t spin = 0;
     while (true) spin++;
   }
   if (!strcmp(argv[0], "diag")) {    // diag [clear] : cause of the last reboot, last fault, watchdog capture
     diag_report(diagOut);
-    if (argc > 1 && !strcmp(argv[1], "clear")) { diag_begin(); BleConsole.print("diag: efface\r\n"); }
+    if (argc > 1 && !strcmp(argv[1], "clear")) { diag_begin(); BleConsole.print("diag: cleared\r\n"); }
     return true;
   }
   if (!strcmp(argv[0], "bat")) {
@@ -70,7 +70,7 @@ static bool consoleCommand(int argc, char** argv) {
     BleConsole.printf("aon: mux=%08lx pad1=%08lx\r\n", MCU_SUB->AON_PAD_MUX_CTL, AON->AON_PAD_CTL1);
     return true;
   }
-  if (!strcmp(argv[0], "rxdiag")) {  // rxdiag [reset] : radio driver diagnostics (rx duty cycle trial)
+  if (!strcmp(argv[0], "rxdiag")) {  // rxdiag [reset] : radio driver diagnostics (RadioLib calls, loop gaps, TX)
     t1000aRadioDiag(BleConsole, argc > 1 && !strcmp(argv[1], "reset"));
     return true;
   }

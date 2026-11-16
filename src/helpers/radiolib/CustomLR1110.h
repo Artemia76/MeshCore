@@ -3,19 +3,25 @@
 #include <RadioLib.h>
 #include "MeshCore.h"
 
+// LR11X0_RX_DUTY_CYCLE (defined, 0 or 1): build the RX duty cycle support, with this initial state (the board can
+// switch it at run time). Not defined: the driver behaves exactly as upstream.
+// LR11X0_DIAG: timing and error counters of every RadioLib call (debug builds, needs the duty cycle support).
+#if defined(LR11X0_DIAG) && !defined(LR11X0_RX_DUTY_CYCLE)
+  #error "LR11X0_DIAG needs LR11X0_RX_DUTY_CYCLE"
+#endif
+
 class CustomLR1110 : public LR1110 {
   uint32_t _preambleMillis = 66;
   uint32_t _maxPayloadMillis = 3934;
   uint32_t _activityAt = 0;
   bool _headerSeen = false;
   bool _rx_boosted = false;
-#ifndef LR11X0_RX_DUTY_CYCLE
-  #define LR11X0_RX_DUTY_CYCLE 0
-#endif
+#ifdef LR11X0_RX_DUTY_CYCLE
   bool _rxDuty = LR11X0_RX_DUTY_CYCLE;   // receive in RX duty cycle (sleep between short listening windows)
   bool _dutyActive = false;              // the last startReceive() actually started a duty cycle
   uint32_t _dutyRxUs = 0, _dutySleepUs = 0;
   uint32_t _wakes = 0;                   // NOP wake-ups of a sleeping radio (diagnostics)
+#endif
 
   static const uint32_t RX_FLAGS = RADIOLIB_IRQ_RX_DEFAULT_FLAGS | (1UL << RADIOLIB_IRQ_PREAMBLE_DETECTED);
 
@@ -83,17 +89,19 @@ class CustomLR1110 : public LR1110 {
 
     bool getRxBoostedGainMode() const { return _rx_boosted; }
 
+#ifdef LR11X0_RX_DUTY_CYCLE
     // Every standby wakes the radio with a NOP first: in duty cycle it may be asleep (between windows, or after a
     // packet received), and RadioLib's commands wait for BUSY low before pulling NSS, so they would never wake it.
     int16_t standby() override {
       _dutyActive = false;
       return LR_DIAG(D_STBY, LR1110::standby(RADIOLIB_LR11X0_STANDBY_RC, true));
     }
+#endif
 
     int16_t startReceive() override {
+#ifdef LR11X0_RX_DUTY_CYCLE
       // leave the cycle (or the sleep after a packet) before staging: the radio could sleep between commands
       if (_dutyActive || mod->hal->digitalRead(mod->getGpio()) == mod->hal->GpioLevelHigh) standby();
-      // include the PREAMBLE_DETECTED irq bit in reported flags.
       if (_rxDuty && computeDutyCycle()) {
         // Duty cycle: the LR1110 sleeps between listening windows long enough to catch the senders' preamble
         // (RadioLib's calculation, with our own preamble length as the senders'). DIO1 mapping is unchanged.
@@ -102,6 +110,8 @@ class CustomLR1110 : public LR1110 {
         return state;
       }
       _dutyActive = false;
+#endif
+      // include the PREAMBLE_DETECTED irq bit in reported flags.
       return LR_DIAG(D_RX, LR1110::startReceive(RADIOLIB_LR11X0_RX_TIMEOUT_INF, RX_FLAGS, RADIOLIB_IRQ_RX_DEFAULT_MASK, 0));
     }
 
@@ -121,6 +131,7 @@ class CustomLR1110 : public LR1110 {
 #endif
     int16_t getRssiInstDiag(float* rssi) { return LR_DIAG(D_RSSI, getRssiInst(rssi)); }
 
+#ifdef LR11X0_RX_DUTY_CYCLE
     // RX duty cycle periods for the current modulation (PhysicalLayer::calculateRxDutyCycle, as
     // startReceiveDutyCycleAuto); false when the sleep would be too short to be worth it (e.g. 16-symbol preamble)
     bool computeDutyCycle() {
@@ -190,6 +201,7 @@ class CustomLR1110 : public LR1110 {
       }
       return false;
     }
+#endif
 
     bool isReceiving() {
       uint32_t irq = diagIrq();
