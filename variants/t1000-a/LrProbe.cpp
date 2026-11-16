@@ -294,7 +294,7 @@ void testDutyBuffer(float rx_ms, float sl_ms) {
   delay(300);                                       // several sleep phases
   waitBusyLow();
   standbyRc();
-  out->printf("  apres 300 ms de cycle puis SetStandby: tampon=%d/16 (16 = conserve, 0 = efface)\r\n",
+  out->printf("  after 300 ms of duty cycle then SetStandby: buffer=%d/16 (16 = kept, 0 = lost)\r\n",
               bufMatches(0x60, 16));
   printStatus("status", getStatus());
 }
