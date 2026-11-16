@@ -131,6 +131,15 @@ class CustomLR1110 : public LR1110 {
       uint32_t wake = 0, sleep = 0;
       if (calculateRxDutyCycle(0, preambleLengthLoRa, 0, &dr, &wake, &sleep) != RADIOLIB_ERR_NONE) return false;
       if (sleep < tcxoDelay + 1016) return false;
+      // Once a preamble is detected, the LR1110 waits for the header at most 2 × rxPeriod + sleepPeriod (UM §7.2.6).
+      // RadioLib only covers the preamble: the 4.25 sync + 8 header symbols that follow it are missing, so a
+      // preamble detected early in its 32 symbols times out before its header (measured: 6 frames out of 20).
+      // Cover preamble + header + 1 symbol of margin, counting from a detection 2 symbols into the preamble
+      // (measured: ≈ 3.25), with the sleep RadioLib programs (minus TCXO start-up and 1 ms).
+      uint32_t sym = ((uint32_t)(10 * 1000) << spreadingFactor) / (uint32_t)(10 * bandwidthKhz);
+      uint32_t need = sym * preambleLengthLoRa + sym * 45 / 4 + sym;     // preamble + 12.25 - 2 + 1 symbols
+      uint32_t programmedSleep = sleep - tcxoDelay - 1000;
+      if (2 * wake + programmedSleep < need) wake = (need - programmedSleep + 1) / 2;
       _dutyRxUs = wake;
       _dutySleepUs = sleep;
       return true;
