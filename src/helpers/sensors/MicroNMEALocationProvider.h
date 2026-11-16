@@ -28,6 +28,18 @@
     #define GPS_FIX_SETTLE_MS 10000UL
 #endif
 
+// Indoors the receiver sees no satellite at all: a periodic window then ends after
+// GPS_NOSKY_TIMEOUT_MS instead of the full timeout, and the next attempts are spaced out
+// (period, 2 x period, 4 x period... up to GPS_NOSKY_MAX_PERIOD_S) until a satellite is seen again.
+// "Seen" = a satellite with a SNR in a GSV sentence: without GSV sentences nothing changes.
+// A driver can turn GSV on in onReceiverReady().
+#ifndef GPS_NOSKY_TIMEOUT_MS
+    #define GPS_NOSKY_TIMEOUT_MS 0UL          // opt-in (e.g. 60000UL); 0 = never stop early
+#endif
+#ifndef GPS_NOSKY_MAX_PERIOD_S
+    #define GPS_NOSKY_MAX_PERIOD_S 1800UL
+#endif
+
 // a 2D fix does not replace a 3D fix younger than this (it is less precise)
 #ifndef GPS_3D_FIX_PREFERRED_MS
     #define GPS_3D_FIX_PREFERRED_MS 300000UL
@@ -65,6 +77,13 @@ class MicroNMEALocationProvider : public LocationProvider {
     unsigned long _last_nmea_ms = 0;
     bool _uart_seen = false;
     bool _nmea_seen = false;
+    uint8_t _sky_accum = 0;         // satellites with a SNR in the GSV sentences of the current epoch
+    uint8_t _sky_last = 0;          // ... of the last complete epoch
+    uint8_t _skyMaxInWindow = 0;
+    bool _gsvInWindow = false;
+    bool _gsvRequested = false;
+    uint8_t _noskyStreak = 0;       // windows ended in a row without any satellite
+    uint32_t _gsv_count = 0;
     uint8_t _gsa_fix_mode = 0;      // fix mode from the last GSA: 1 = none, 2 = 2D, 3 = 3D
     unsigned long _gsa_ms = 0;
 
@@ -81,6 +100,44 @@ class MicroNMEALocationProvider : public LocationProvider {
             _gsa_ms = millis();
         }
     }
+    static bool isGsv(const char* id) {
+        const size_t n = strlen(id);
+        return n >= 3 && strcmp(id + n - 3, "GSV") == 0;
+    }
+    // $--GSV,<msgs>,<msg>,<in view>,{<prn>,<elev>,<az>,<snr>} x 1..4[,<signal id>]*CS
+    // Counts the satellites with a (non-zero) SNR.
+    void parseGsv(const char* s) {
+        int field = 0;
+        const char* start = s;
+        for (const char* p = s; ; p++) {
+            if (*p == ',' || *p == '*' || *p == '\0') {
+                // fields 4.. are groups of 4, the SNR is the 4th of a group; a trailing
+                // signal id (NMEA 4.10) is a lone field after the last group
+                if (field >= 4 && (field - 4) % 4 == 3) {
+                    if (p > start && atoi(start) > 0 && _sky_accum < 255) _sky_accum++;
+                }
+                if (*p != ',') break;
+                field++;
+                start = p + 1;
+            }
+        }
+        _gsv_count++;
+        _gsvInWindow = true;
+    }
+    // end of an epoch (RMC comes after the GSV sentences on the AG3335 and most receivers)
+    void endSkyEpoch() {
+        _sky_last = _sky_accum;
+        _sky_accum = 0;
+        if (_sky_last > _skyMaxInWindow) _skyMaxInWindow = _sky_last;
+        if (_sky_last > 0) _noskyStreak = 0;
+    }
+    void startSkyWindow() {
+        _sky_accum = _sky_last = 0;
+        _skyMaxInWindow = 0;
+        _gsvInWindow = false;
+        _gsvRequested = false;
+    }
+
     // 0 (unknown) if the receiver does not send GSA, or sent none recently
     uint8_t currentFixMode() const {
         return (_gsa_fix_mode != 0 && (uint32_t)(millis() - _gsa_ms) <= 2000) ? _gsa_fix_mode : 0;
@@ -110,15 +167,29 @@ class MicroNMEALocationProvider : public LocationProvider {
         _acquisitionStarted = millis();
         _firstFixInWindow = 0;
         _goodFixInWindow = false;
+        startSkyWindow();
     }
 
-    void finishPeriodicAcquisition() {
+    // next window after one ended without any satellite: period x 2^(streak - 1), capped
+    uint32_t noskyPeriodSeconds() const {
+        uint32_t p = _gpsPeriodSeconds;
+        for (uint8_t n = 1; n < _noskyStreak && p < GPS_NOSKY_MAX_PERIOD_S; n++) p *= 2;
+        if (p > GPS_NOSKY_MAX_PERIOD_S) p = GPS_NOSKY_MAX_PERIOD_S;
+        return p > _gpsPeriodSeconds ? p : _gpsPeriodSeconds;
+    }
+
+    void finishPeriodicAcquisition(bool nosky = false) {
         if (_firstFixInWindow == 0) fixStatsMiss();
         _driver->stop();
         nmea.clear();      // the parser keeps the last time as valid otherwise
         time_valid = 0;
         _acquiringPeriodically = false;
-        _nextAcquisition = millis() + _gpsPeriodSeconds * 1000UL;
+        if (nosky) {
+            if (_noskyStreak < 255) _noskyStreak++;
+        } else {
+            _noskyStreak = 0;
+        }
+        _nextAcquisition = millis() + (nosky ? noskyPeriodSeconds() : _gpsPeriodSeconds) * 1000UL;
     }
 
     bool saveFix() {
@@ -198,6 +269,7 @@ public:
             _acquisitionStarted = millis();
             _firstFixInWindow = 0;
             _goodFixInWindow = false;
+            startSkyWindow();
         }
     }
 
@@ -234,6 +306,7 @@ public:
         _gpsPeriodSeconds = seconds;
         _nextAcquisition = millis();
         _acquiringPeriodically = false;
+        _noskyStreak = 0;
     }
 
     uint32_t getGpsPeriod() const override {
@@ -255,6 +328,7 @@ public:
     bool startOnce() override {
         if (_gpsOn) { // already on, acquire now
             _nextAcquisition = millis();
+            _noskyStreak = 0;
             return true;
         }
         setGpsOn(true);
@@ -316,6 +390,19 @@ public:
         DateTime dt(nmea.getYear(), nmea.getMonth(), nmea.getDay(),
                     nmea.getHour(), nmea.getMinute(), nmea.getSecond());
         return dt.unixtime();
+    }
+
+    // satellites with a SNR (last epoch, best of the window), GSV sentences seen, windows without sky in a row
+    uint8_t skyLast() const { return _sky_last; }
+    uint8_t skyMaxInWindow() const { return _skyMaxInWindow; }
+    uint32_t gsvCount() const { return _gsv_count; }
+    uint8_t noskyStreak() const { return _noskyStreak; }
+    bool acquiringPeriodically() const { return _acquiringPeriodically; }
+    // seconds until the next periodic window (0 if one is running or none is planned)
+    uint32_t nextAcquisitionIn() const {
+        if (_acquiringPeriodically || _gpsPeriodSeconds == 0 || !_gpsOn) return 0;
+        const long dt = (long)(_nextAcquisition - millis());
+        return dt > 0 ? (uint32_t)dt / 1000UL : 0;
     }
 
     void drain() override { _driver->drain(); }
@@ -385,6 +472,12 @@ public:
 
                     const char* messageId = nmea.getMessageID();
                     if (isGsa(messageId)) parseGsa(nmea.getSentence());
+                    else if (isGsv(messageId)) parseGsv(nmea.getSentence());
+                    else if (strcmp(messageId, "RMC") == 0) endSkyEpoch();
+                    if (!_gsvRequested) {   // once per window (e.g. make sure GSV is output)
+                        _gsvRequested = true;
+                        _driver->onReceiverReady();
+                    }
 #ifdef GPS_GUARD
                     if (parsed && !nmea.isValid() &&
                         (strcmp(messageId, "GGA") == 0 || strcmp(messageId, "RMC") == 0)) {
@@ -421,8 +514,12 @@ public:
         if (_acquiringPeriodically) {
             const uint32_t limit = _lastFix.valid ? GPS_PERIODIC_ACQUISITION_TIMEOUT_MS
                                                   : _firstFixTimeoutSeconds * 1000UL;
-            if (limit > 0 && (uint32_t)(millis() - _acquisitionStarted) >= limit) {
-                finishPeriodicAcquisition();
+            const uint32_t elapsed = (uint32_t)(millis() - _acquisitionStarted);
+            if (limit > 0 && elapsed >= limit) {
+                finishPeriodicAcquisition(GPS_NOSKY_TIMEOUT_MS > 0 && _gsvInWindow && _skyMaxInWindow == 0);
+            } else if (GPS_NOSKY_TIMEOUT_MS > 0 && _gsvInWindow && _skyMaxInWindow == 0 &&
+                       _firstFixInWindow == 0 && elapsed >= GPS_NOSKY_TIMEOUT_MS) {
+                finishPeriodicAcquisition(true);   // indoors: nothing to wait for
             }
         }
 
@@ -454,6 +551,7 @@ public:
             (unsigned long)_stop_calls);
         // fix mode from GSA (1 none, 2 2D, 3 3D, 0 no recent GSA)
         const size_t len = strlen(out);
-        if (len < out_size) snprintf(out + len, out_size - len, " fm:%u", currentFixMode());
+        if (len < out_size) snprintf(out + len, out_size - len, " fm:%u sky:%u ns:%u", currentFixMode(),
+                                     _sky_last, _noskyStreak);
     }
 };

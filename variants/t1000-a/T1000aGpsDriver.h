@@ -21,6 +21,9 @@ public:
     digitalWrite(GPS_RTC_INT, LOW);
   }
 
+  // GSV (satellites in view) drives the no-sky stop: the receiver's saved settings may not output it
+  void onReceiverReady() override { sendNmeaSentence("$PAIR062,3,1"); }
+
   void reset() override {
     digitalWrite(GPS_RESET, LOW);
     delay(10);

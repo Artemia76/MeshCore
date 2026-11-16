@@ -176,5 +176,9 @@ void t1000aConsoleGps(Print& out) {
   out.printf("gps: on=%d fix=%d sats=%ld lat=%ld lon=%ld uart_rx=%lu octets en=%d\r\n", nmea.isGpsOn(), nmea.hasValidFix(),
              (long)nmea.satellitesCount(), (long)nmea.getLatitude(), (long)nmea.getLongitude(), (unsigned long)Serial1.rxBytes(),
              digitalRead(GPS_EN) == HIGH);
+  out.printf("gps: sky=%u (max %u in window) gsv=%lu nosky_streak=%u period=%lus %s %lus\r\n", nmea.skyLast(),
+             nmea.skyMaxInWindow(), (unsigned long)nmea.gsvCount(), nmea.noskyStreak(), (unsigned long)nmea.getGpsPeriod(),
+             nmea.acquiringPeriodically() ? "acquiring for" : "next in",
+             (unsigned long)(nmea.acquiringPeriodically() ? nmea.getAcquisitionAge() : nmea.nextAcquisitionIn()));
 }
 #endif
