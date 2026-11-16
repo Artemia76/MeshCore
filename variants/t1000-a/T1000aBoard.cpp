@@ -14,6 +14,7 @@ static T1000aBoard* s_board;
 void t1000aConsoleGps(Print& out);   // target.cpp
 void t1000aRxDutySet(bool on, bool save);
 void t1000aRxDutyInfo(Print& out);
+void t1000aRadioDiag(Print& out, bool reset);   // target.cpp
 void t1000aLrProbe(Print& out, int argc, char** argv);   // LrProbe.cpp
 
 static bool consoleCommand(int argc, char** argv) {
@@ -45,6 +46,10 @@ static bool consoleCommand(int argc, char** argv) {
     BleConsole.printf("pwm1: state=%d mode=%08lx upd=%08lx prd=%lu a0=%lu a1=%lu aq=%08lx\r\n", h ? (int)h->state : -1,
                       PWM1->MODE, PWM1->UPDATE, PWM1->PRD, PWM1->CMPA0, PWM1->CMPA1, PWM1->AQCTRL);
     BleConsole.printf("aon: mux=%08lx pad1=%08lx\r\n", MCU_SUB->AON_PAD_MUX_CTL, AON->AON_PAD_CTL1);
+    return true;
+  }
+  if (!strcmp(argv[0], "rxdiag")) {  // rxdiag [reset] : radio driver diagnostics (rx duty cycle trial)
+    t1000aRadioDiag(BleConsole, argc > 1 && !strcmp(argv[1], "reset"));
     return true;
   }
   if (!strcmp(argv[0], "rxduty")) {  // rxduty [on|off] : LoRa receive in duty cycle (saved)
