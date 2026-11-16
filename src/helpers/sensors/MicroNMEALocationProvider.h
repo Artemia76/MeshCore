@@ -34,7 +34,7 @@
 // "Seen" = a satellite with a SNR in a GSV sentence: without GSV sentences nothing changes.
 // A driver can turn GSV on in onReceiverReady().
 #ifndef GPS_NOSKY_TIMEOUT_MS
-    #define GPS_NOSKY_TIMEOUT_MS 60000UL      // 0 = never stop early
+    #define GPS_NOSKY_TIMEOUT_MS 0UL          // opt-in (e.g. 60000UL); 0 = never stop early
 #endif
 #ifndef GPS_NOSKY_MAX_PERIOD_S
     #define GPS_NOSKY_MAX_PERIOD_S 1800UL
@@ -516,7 +516,7 @@ public:
                                                   : _firstFixTimeoutSeconds * 1000UL;
             const uint32_t elapsed = (uint32_t)(millis() - _acquisitionStarted);
             if (limit > 0 && elapsed >= limit) {
-                finishPeriodicAcquisition(_gsvInWindow && _skyMaxInWindow == 0);
+                finishPeriodicAcquisition(GPS_NOSKY_TIMEOUT_MS > 0 && _gsvInWindow && _skyMaxInWindow == 0);
             } else if (GPS_NOSKY_TIMEOUT_MS > 0 && _gsvInWindow && _skyMaxInWindow == 0 &&
                        _firstFixInWindow == 0 && elapsed >= GPS_NOSKY_TIMEOUT_MS) {
                 finishPeriodicAcquisition(true);   // indoors: nothing to wait for
