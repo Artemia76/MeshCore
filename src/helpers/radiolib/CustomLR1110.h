@@ -20,6 +20,34 @@ class CustomLR1110 : public LR1110 {
   static const uint32_t RX_FLAGS = RADIOLIB_IRQ_RX_DEFAULT_FLAGS | (1UL << RADIOLIB_IRQ_PREAMBLE_DETECTED);
 
   public:
+#ifdef LR11X0_DIAG
+    // Diagnostics (debug build): duration and result of every RadioLib call the driver makes, plus a ring of
+    // abnormal events (error, or call longer than 20 ms). RadioLib waits for BUSY low before each command, so a
+    // call blocked by a sleeping radio shows up here as a long duration or a -705 (SPI command timeout).
+    enum { D_RX, D_READ, D_TX, D_STBY, D_IRQ, D_RSSI, D_N };
+    struct DiagOp { uint32_t calls, errs, maxUs, totalUs; int16_t lastErr; };
+    struct DiagEvt { uint32_t ms; uint8_t op; int16_t err; uint32_t us; uint8_t busy; };
+    DiagOp diag[D_N] = {};
+    DiagEvt diagRing[32] = {};
+    uint8_t diagHead = 0;
+    uint32_t diagEvts = 0;
+    void diagNote(uint8_t op, int16_t err, uint32_t us, bool busyBefore) {
+      DiagOp& d = diag[op];
+      d.calls++; d.totalUs += us;
+      if (us > d.maxUs) d.maxUs = us;
+      if (err != RADIOLIB_ERR_NONE) { d.errs++; d.lastErr = err; }
+      if (err != RADIOLIB_ERR_NONE || us > 20000) {
+        diagRing[diagHead] = {millis(), op, err, us, busyBefore};
+        diagHead = (diagHead + 1) % 32;
+        diagEvts++;
+      }
+    }
+    bool busyNow() { return mod->hal->digitalRead(mod->getGpio()) == mod->hal->GpioLevelHigh; }
+  #define LR_DIAG(op, expr) ({ bool _b = busyNow(); uint32_t _t = micros(); int16_t _e = (expr); \
+                               diagNote(op, _e, micros() - _t, _b); _e; })
+#else
+  #define LR_DIAG(op, expr) (expr)
+#endif
     CustomLR1110(Module *mod) : LR1110(mod) { }
 
     int16_t begin(float freq = 434.0, float bw = 125.0, uint8_t sf = 9, uint8_t cr = 7,
@@ -59,7 +87,7 @@ class CustomLR1110 : public LR1110 {
     // packet received), and RadioLib's commands wait for BUSY low before pulling NSS, so they would never wake it.
     int16_t standby() override {
       _dutyActive = false;
-      return LR1110::standby(RADIOLIB_LR11X0_STANDBY_RC, true);
+      return LR_DIAG(D_STBY, LR1110::standby(RADIOLIB_LR11X0_STANDBY_RC, true));
     }
 
     int16_t startReceive() override {
@@ -69,13 +97,29 @@ class CustomLR1110 : public LR1110 {
       if (_rxDuty && computeDutyCycle()) {
         // Duty cycle: the LR1110 sleeps between listening windows long enough to catch the senders' preamble
         // (RadioLib's calculation, with our own preamble length as the senders'). DIO1 mapping is unchanged.
-        int16_t state = startReceiveDutyCycle(_dutyRxUs, _dutySleepUs, RX_FLAGS, RADIOLIB_IRQ_RX_DEFAULT_MASK);
+        int16_t state = LR_DIAG(D_RX, startReceiveDutyCycle(_dutyRxUs, _dutySleepUs, RX_FLAGS, RADIOLIB_IRQ_RX_DEFAULT_MASK));
         _dutyActive = state == RADIOLIB_ERR_NONE;
         return state;
       }
       _dutyActive = false;
-      return LR1110::startReceive(RADIOLIB_LR11X0_RX_TIMEOUT_INF, RX_FLAGS, RADIOLIB_IRQ_RX_DEFAULT_MASK, 0);
+      return LR_DIAG(D_RX, LR1110::startReceive(RADIOLIB_LR11X0_RX_TIMEOUT_INF, RX_FLAGS, RADIOLIB_IRQ_RX_DEFAULT_MASK, 0));
     }
+
+#ifdef LR11X0_DIAG
+    int16_t readData(uint8_t* data, size_t len) override { return LR_DIAG(D_READ, LR1110::readData(data, len)); }
+    int16_t startTransmit(const uint8_t* data, size_t len, uint8_t addr = 0) override {
+      return LR_DIAG(D_TX, LR1110::startTransmit(data, len, addr));
+    }
+    uint32_t diagIrq() {                     // getIrqStatus() timed (it returns the flags, not an error code)
+      bool b = busyNow(); uint32_t t = micros();
+      uint32_t irq = getIrqStatus();
+      diagNote(D_IRQ, RADIOLIB_ERR_NONE, micros() - t, b);
+      return irq;
+    }
+#else
+    uint32_t diagIrq() { return getIrqStatus(); }
+#endif
+    int16_t getRssiInstDiag(float* rssi) { return LR_DIAG(D_RSSI, getRssiInst(rssi)); }
 
     // RX duty cycle periods for the current modulation (PhysicalLayer::calculateRxDutyCycle, as
     // startReceiveDutyCycleAuto); false when the sleep would be too short to be worth it (e.g. 16-symbol preamble)
@@ -128,7 +172,7 @@ class CustomLR1110 : public LR1110 {
     // Duty cycle, radio awake (BUSY low): is a packet coming in? A valid header without RX done means yes. A
     // preamble alone counts once and is cleared: it stays set after a header timeout, which would block TX.
     bool dutyActivity() {
-      uint32_t irq = getIrqStatus();
+      uint32_t irq = diagIrq();
       if (irq & (RADIOLIB_LR11X0_IRQ_RX_DONE | RADIOLIB_LR11X0_IRQ_HEADER_ERR)) return false;
       if (irq & RADIOLIB_LR11X0_IRQ_SYNC_WORD_HEADER_VALID) return true;
       if (irq & RADIOLIB_LR11X0_IRQ_PREAMBLE_DETECTED) {
@@ -139,7 +183,7 @@ class CustomLR1110 : public LR1110 {
     }
 
     bool isReceiving() {
-      uint32_t irq = getIrqStatus();
+      uint32_t irq = diagIrq();
       bool preamble = irq & RADIOLIB_LR11X0_IRQ_PREAMBLE_DETECTED;      // bit 4
       bool header   = irq & RADIOLIB_LR11X0_IRQ_SYNC_WORD_HEADER_VALID; // bit 5
       bool hdrErr   = irq & RADIOLIB_LR11X0_IRQ_HEADER_ERR;             // bit 6

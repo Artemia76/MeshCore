@@ -14,8 +14,32 @@ static T1000aBoard* s_board;
 void t1000aConsoleGps(Print& out);   // target.cpp
 void t1000aRxDutySet(bool on, bool save);
 void t1000aRxDutyInfo(Print& out);
+void t1000aRadioDiag(Print& out, bool reset);   // target.cpp
+void t1000aLrProbe(Print& out, int argc, char** argv);   // LrProbe.cpp
+
+#include <diag.h>
+#include <stdarg.h>
+static void diagOut(const char* fmt, ...) {
+  char b[160];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(b, sizeof(b), fmt, ap);
+  va_end(ap);
+  BleConsole.print(b);
+}
 
 static bool consoleCommand(int argc, char** argv) {
+  if (!strcmp(argv[0], "hang")) {    // hang : blocks the main loop (IRQs on) to test the watchdog capture
+    BleConsole.print("hang: blocage volontaire, redemarrage par le chien de garde dans ~8 s\r\n");
+    delay(300);
+    volatile uint32_t spin = 0;
+    while (true) spin++;
+  }
+  if (!strcmp(argv[0], "diag")) {    // diag [clear] : cause of the last reboot, last fault, watchdog capture
+    diag_report(diagOut);
+    if (argc > 1 && !strcmp(argv[1], "clear")) { diag_begin(); BleConsole.print("diag: efface\r\n"); }
+    return true;
+  }
   if (!strcmp(argv[0], "bat")) {
     int raw = analogReadMilliVolts(PIN_BATTERY);
     BleConsole.printf("battery: %u mV (MSIO4 %d mV)\r\n", s_board->getBattMilliVolts(), raw);
@@ -46,6 +70,10 @@ static bool consoleCommand(int argc, char** argv) {
     BleConsole.printf("aon: mux=%08lx pad1=%08lx\r\n", MCU_SUB->AON_PAD_MUX_CTL, AON->AON_PAD_CTL1);
     return true;
   }
+  if (!strcmp(argv[0], "rxdiag")) {  // rxdiag [reset] : radio driver diagnostics (rx duty cycle trial)
+    t1000aRadioDiag(BleConsole, argc > 1 && !strcmp(argv[1], "reset"));
+    return true;
+  }
   if (!strcmp(argv[0], "rxduty")) {  // rxduty [on|off] : LoRa receive in duty cycle (saved)
     if (argc > 1 && (!strcmp(argv[1], "on") || !strcmp(argv[1], "off"))) t1000aRxDutySet(!strcmp(argv[1], "on"), true);
     t1000aRxDutyInfo(BleConsole);
@@ -53,6 +81,10 @@ static bool consoleCommand(int argc, char** argv) {
   }
   if (!strcmp(argv[0], "chg")) {     // charge-state candidates, to compare with the cable plugged / unplugged
     s_board->powerLog.printCharge(BleConsole);
+    return true;
+  }
+  if (!strcmp(argv[0], "lr")) {      // lr <test> : LR1110 probe (raw SPI), then reboot
+    t1000aLrProbe(BleConsole, argc, argv);
     return true;
   }
   if (!strcmp(argv[0], "blelog")) {

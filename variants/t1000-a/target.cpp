@@ -165,6 +165,12 @@ void t1000aRadioCounts(uint32_t& rx, uint32_t& tx) {
   tx = radio_driver.getPacketsSent();
 }
 
+// Console diagnostics ("rxdiag [reset]"): RadioLib calls, main-loop gaps, transmissions
+void t1000aRadioDiag(Print& out, bool reset) {
+  radio_driver.printDiag(out);
+  if (reset) { radio_driver.resetDiag(); out.print("rxdiag: reset\r\n"); }
+}
+
 // Console diagnostics ("gps")
 void t1000aConsoleGps(Print& out) {
   out.printf("gps: on=%d fix=%d sats=%ld lat=%ld lon=%ld uart_rx=%lu octets en=%d\r\n", nmea.isGpsOn(), nmea.hasValidFix(),
