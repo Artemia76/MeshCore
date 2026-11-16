@@ -471,6 +471,11 @@ void UITask::userLedHandler() {
         last_increment = LED_ON_MILLIS;
       }
       next_change = cur_time + last_increment;
+#ifdef STATUS_LED_WAKE
+      // the CPU may sleep between loop passes (up to its tick period): wake it to switch the LED off on time,
+      // otherwise the 20 ms flash lasts until the next wake-up
+      STATUS_LED_WAKE(last_increment + 1);
+#endif
     } else {
       state = 0;
       next_change = cur_time + LED_CYCLE_MILLIS - last_increment;
