@@ -14,6 +14,7 @@ static T1000aBoard* s_board;
 void t1000aConsoleGps(Print& out);   // target.cpp
 void t1000aRxDutySet(bool on, bool save);
 void t1000aRxDutyInfo(Print& out);
+void t1000aLrProbe(Print& out, int argc, char** argv);   // LrProbe.cpp
 
 static bool consoleCommand(int argc, char** argv) {
   if (!strcmp(argv[0], "bat")) {
@@ -53,6 +54,10 @@ static bool consoleCommand(int argc, char** argv) {
   }
   if (!strcmp(argv[0], "chg")) {     // charge-state candidates, to compare with the cable plugged / unplugged
     s_board->powerLog.printCharge(BleConsole);
+    return true;
+  }
+  if (!strcmp(argv[0], "lr")) {      // lr <test> : LR1110 probe (raw SPI), then reboot
+    t1000aLrProbe(BleConsole, argc, argv);
     return true;
   }
   if (!strcmp(argv[0], "blelog")) {
