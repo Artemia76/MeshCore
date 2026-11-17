@@ -2620,3 +2620,20 @@ bool MyMesh::advert() {
 bool MyMesh::hasPendingWork() const {
   return _mgr->getOutboundTotal() > 0 || dirty_contacts_expiry != 0;
 }
+
+#ifdef COMPANION_LOOP_DIAG
+void MyMesh::printPendingWork(Print& out) const {
+  uint32_t now = _ms->getMillis();
+  int total = _mgr->getOutboundTotal();
+  out.printf("pending: %s  outbound %d (due now %d, free %d)  dirty contacts %s",
+             hasPendingWork() ? "YES" : "no", total, _mgr->getOutboundCount(now), _mgr->getFreeCount(),
+             dirty_contacts_expiry ? "yes" : "no");
+  if (dirty_contacts_expiry) out.printf(" (write in %ld ms)", (long)(int32_t)(dirty_contacts_expiry - now));
+  out.print("\r\n");
+  for (int i = 0; i < total && i < 8; i++) {
+    mesh::Packet* p = _mgr->getOutboundByIdx(i);
+    if (p) out.printf("  out[%d] type=%u route=%s payload=%u hops=%u\r\n", i, p->getPayloadType(),
+                      p->isRouteDirect() ? "D" : "F", p->payload_len, p->getPathHashCount());
+  }
+}
+#endif

@@ -15,6 +15,7 @@ void t1000aConsoleGps(Print& out);   // target.cpp
 void t1000aRxDutySet(bool on, bool save);
 void t1000aRxDutyInfo(Print& out);
 void t1000aRadioDiag(Print& out, bool reset);   // target.cpp
+void companionLoopDiag(Print& out, bool reset);  // examples/companion_radio/main.cpp (COMPANION_LOOP_DIAG)
 void t1000aLrProbe(Print& out, int argc, char** argv);   // LrProbe.cpp
 
 #include <diag.h>
@@ -85,6 +86,10 @@ static bool consoleCommand(int argc, char** argv) {
   }
   if (!strcmp(argv[0], "lr")) {      // lr <test> : LR1110 probe (raw SPI), then reboot
     t1000aLrProbe(BleConsole, argc, argv);
+    return true;
+  }
+  if (!strcmp(argv[0], "pending")) { // pending [reset] : what keeps the CPU awake, slowest parts of loop()
+    companionLoopDiag(BleConsole, argc > 1 && !strcmp(argv[1], "reset"));
     return true;
   }
   if (!strcmp(argv[0], "blelog")) {

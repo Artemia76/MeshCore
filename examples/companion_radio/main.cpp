@@ -355,15 +355,60 @@ static void loopDuringDisplayRefresh() {
 }
 #endif
 
+#ifdef COMPANION_LOOP_DIAG
+// Debug console: longest time spent in each part of loop(), passes over 200 ms, and how long
+// hasPendingWork() has kept the CPU from sleeping
+static const char* const kLoopSec[] = { "mesh", "iface", "sensors", "ui", "board" };
+static uint32_t s_secMax[5], s_secSlow[5], s_secMaxAt[5];
+static uint32_t s_pendSince, s_pendLongest, s_passes, s_pendPasses;
+#define LOOP_SEC(i, call) do { uint32_t t0_ = millis(); call; uint32_t d_ = millis() - t0_; \
+    if (d_ > s_secMax[i]) { s_secMax[i] = d_; s_secMaxAt[i] = t0_; } if (d_ > 200) s_secSlow[i]++; } while (0)
+
+void companionLoopDiag(Print& out, bool reset) {
+  uint32_t now = millis();
+  the_mesh.printPendingWork(out);
+  out.printf("  passes %lu, with pending work %lu; pending for %lu ms now, longest %lu ms\r\n",
+             (unsigned long)s_passes, (unsigned long)s_pendPasses,
+             (unsigned long)(s_pendSince ? now - s_pendSince : 0), (unsigned long)s_pendLongest);
+  for (int i = 0; i < 5; i++)
+    out.printf("  %-7s max %lu ms (at %lus)  >200ms: %lu\r\n", kLoopSec[i], (unsigned long)s_secMax[i],
+               (unsigned long)(s_secMaxAt[i] / 1000), (unsigned long)s_secSlow[i]);
+  if (reset) {
+    memset(s_secMax, 0, sizeof(s_secMax)); memset(s_secSlow, 0, sizeof(s_secSlow));
+    s_passes = s_pendPasses = s_pendLongest = 0;
+    out.print("pending: reset\r\n");
+  }
+}
+#else
+#define LOOP_SEC(i, call) call
+#endif
+
 void loop() {
+#ifdef COMPANION_LOOP_DIAG
+  LOOP_SEC(0, the_mesh.loop());
+  LOOP_SEC(1, interface_manager.loop());
+  LOOP_SEC(2, sensors.loop());
+#else
   loopCore();
+#endif
 #ifdef DISPLAY_CLASS
-  ui_task.loop();
+  LOOP_SEC(3, ui_task.loop());
 #endif
   rtc_clock.tick();
-  board.loop();
+  LOOP_SEC(4, board.loop());
 #ifdef HAS_EXTERNAL_WATCHDOG
   external_watchdog.loop();
+#endif
+
+#ifdef COMPANION_LOOP_DIAG
+  s_passes++;
+  if (the_mesh.hasPendingWork()) {
+    s_pendPasses++;
+    if (!s_pendSince) s_pendSince = millis() ? millis() : 1;
+    if (millis() - s_pendSince > s_pendLongest) s_pendLongest = millis() - s_pendSince;
+  } else {
+    s_pendSince = 0;
+  }
 #endif
 
   if (!the_mesh.hasPendingWork()) {

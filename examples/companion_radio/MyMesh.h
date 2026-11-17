@@ -215,6 +215,9 @@ public:
 
   // To check if there is pending work
   bool hasPendingWork() const;
+#ifdef COMPANION_LOOP_DIAG
+  void printPendingWork(Print& out) const;   // what keeps hasPendingWork() true (debug console)
+#endif
 
 private:
   void writeOKFrame();
