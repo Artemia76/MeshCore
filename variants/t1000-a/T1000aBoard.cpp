@@ -16,6 +16,7 @@ void t1000aRxDutySet(bool on, bool save);
 void t1000aRxDutyInfo(Print& out);
 void t1000aRadioDiag(Print& out, bool reset);   // target.cpp
 void companionLoopDiag(Print& out, bool reset);  // examples/companion_radio/main.cpp (COMPANION_LOOP_DIAG)
+extern "C" uint64_t gr551x_ticks32k(void);       // platform core (32 kHz AON time base), for "sched cpu"
 void t1000aLrProbe(Print& out, int argc, char** argv);   // LrProbe.cpp
 
 #include <diag.h>
@@ -89,12 +90,39 @@ static bool consoleCommand(int argc, char** argv) {
     return true;
   }
 #ifdef GR551X_SCHED_STATS
-  if (!strcmp(argv[0], "sched")) {   // sched [reset | awake <s>] : pwr_mgmt_schedule() and loop() durations (twin model)
+  if (!strcmp(argv[0], "sched")) {   // sched [reset | awake <s> | cpu] : pwr_mgmt_schedule() and loop() durations (twin model)
     if (argc > 1 && !strcmp(argv[1], "reset")) { gr551x_sched_stats_reset(); BleConsole.print("sched: reset\r\n"); }
     if (argc > 2 && !strcmp(argv[1], "awake")) {   // force the "no sleep" path, as when hasPendingWork() is stuck
       gr551x_sched_stats_reset();
       gr551x_stay_awake((uint32_t)atoi(argv[2]) * 1000);
       BleConsole.printf("sched: reset, CPU kept awake for %d s\r\n", atoi(argv[2]));
+      return true;
+    }
+    if (argc > 1 && !strcmp(argv[1], "cpu")) {     // core clock and cost of code executed from Flash / RAM
+      CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+      DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+      uint64_t t0 = gr551x_ticks32k();
+      while (gr551x_ticks32k() == t0) {}             // align on a tick edge
+      t0 = gr551x_ticks32k();
+      uint32_t c0 = DWT->CYCCNT;
+      while (gr551x_ticks32k() - t0 < 3277) {}       // ~100 ms
+      uint32_t c1 = DWT->CYCCNT;
+      uint64_t t1 = gr551x_ticks32k();
+      unsigned long hz = (unsigned long)((uint64_t)(c1 - c0) * 32768 / (t1 - t0));
+      // tight loop: 2 instructions per pass (subs + bne), executed from Flash (XIP cache)
+      uint32_t n = 200000, ca = DWT->CYCCNT;
+      __asm volatile("1: subs %0, %0, #1\n bne 1b" : "+r"(n) :: "cc");
+      uint32_t loop_cyc = DWT->CYCCNT - ca;
+      // RAM -> RAM copy, 4 KB
+      static uint32_t src[1024], dst[1024];
+      ca = DWT->CYCCNT;
+      memcpy(dst, src, sizeof(dst));
+      uint32_t cpy_cyc = DWT->CYCCNT - ca;
+      // SPI round trip to the LR1110 (GetStatus) is measured by rxdiag (irqStatus avg)
+      BleConsole.printf("cpu: core %lu Hz (CYCCNT over 32 kHz ticks); loop 2 insn x 200000 = %lu cycles (%lu.%02lu cyc/pass);"
+                        " memcpy 4 KB = %lu cycles\r\n", hz, (unsigned long)loop_cyc,
+                        (unsigned long)(loop_cyc / 200000), (unsigned long)(loop_cyc % 200000 * 100 / 200000),
+                        (unsigned long)cpy_cyc);
       return true;
     }
     gr551x_sched_stats_t st;
