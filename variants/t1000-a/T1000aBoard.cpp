@@ -17,6 +17,7 @@ void t1000aRxDutyInfo(Print& out);
 void t1000aRadioDiag(Print& out, bool reset);   // target.cpp
 void companionLoopDiag(Print& out, bool reset);  // examples/companion_radio/main.cpp (COMPANION_LOOP_DIAG)
 extern "C" uint64_t gr551x_ticks32k(void);       // platform core (32 kHz AON time base), for "sched cpu"
+void t1000aSha256(uint8_t* hash, const uint8_t* msg, int len);   // target.cpp (MeshCore Utils), for "sched cpu"
 void t1000aLrProbe(Print& out, int argc, char** argv);   // LrProbe.cpp
 
 #include <diag.h>
@@ -113,16 +114,33 @@ static bool consoleCommand(int argc, char** argv) {
       uint32_t n = 200000, ca = DWT->CYCCNT;
       __asm volatile("1: subs %0, %0, #1\n bne 1b" : "+r"(n) :: "cc");
       uint32_t loop_cyc = DWT->CYCCNT - ca;
-      // RAM -> RAM copy, 4 KB
-      static uint32_t src[1024], dst[1024];
+      // cost of the time base and of AON registers, then a representative computation (SHA-256 of 1 KB);
+      // the twin runs the same code: its instruction count against these cycles gives the CPI to model
+      static volatile uint32_t sink;
+      static uint8_t buf[1024], hash[32];
+      for (int i = 0; i < (int)sizeof(buf); i++) buf[i] = (uint8_t)(i * 7 + sink);
+      __disable_irq();
       ca = DWT->CYCCNT;
-      memcpy(dst, src, sizeof(dst));
-      uint32_t cpy_cyc = DWT->CYCCNT - ca;
-      // SPI round trip to the LR1110 (GetStatus) is measured by rxdiag (irqStatus avg)
-      BleConsole.printf("cpu: core %lu Hz (CYCCNT over 32 kHz ticks); loop 2 insn x 200000 = %lu cycles (%lu.%02lu cyc/pass);"
-                        " memcpy 4 KB = %lu cycles\r\n", hz, (unsigned long)loop_cyc,
-                        (unsigned long)(loop_cyc / 200000), (unsigned long)(loop_cyc % 200000 * 100 / 200000),
-                        (unsigned long)cpy_cyc);
+      for (int i = 0; i < 100; i++) sink += (uint32_t)gr551x_ticks32k();
+      uint32_t t32 = DWT->CYCCNT - ca;
+      ca = DWT->CYCCNT;
+      for (int i = 0; i < 100; i++) sink += millis();
+      uint32_t tms = DWT->CYCCNT - ca;
+      ca = DWT->CYCCNT;
+      for (int i = 0; i < 100; i++) sink += AON->TIMER_VAL;
+      uint32_t traw = DWT->CYCCNT - ca;
+      ca = DWT->CYCCNT;
+      for (int i = 0; i < 100; i++) AON->AON_PAD_CTL1 = AON->AON_PAD_CTL1;
+      uint32_t trw = DWT->CYCCNT - ca;
+      ca = DWT->CYCCNT;
+      t1000aSha256(hash, buf, sizeof(buf));
+      uint32_t tsha = DWT->CYCCNT - ca;
+      __enable_irq();
+      sink += hash[0];
+      BleConsole.printf("cpu: core %lu Hz; loop 2 insn x 200000 = %lu cycles\r\n", hz, (unsigned long)loop_cyc);
+      BleConsole.printf("cpu: per call (cycles): ticks32k %lu, millis %lu, AON TIMER_VAL read %lu, AON_PAD_CTL1 rd+wr %lu;"
+                        " sha256 1 KB %lu\r\n", (unsigned long)(t32 / 100), (unsigned long)(tms / 100),
+                        (unsigned long)(traw / 100), (unsigned long)(trw / 100), (unsigned long)tsha);
       return true;
     }
     gr551x_sched_stats_t st;

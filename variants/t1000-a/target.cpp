@@ -173,6 +173,9 @@ void t1000aRadioDiag(Print& out, bool reset) {
   if (reset) { radio_driver.resetDiag(); out.print("rxdiag: reset\r\n"); }
 }
 
+// "sched cpu": representative computation, timed on the board and in the twin
+void t1000aSha256(uint8_t* hash, const uint8_t* msg, int len) { mesh::Utils::sha256(hash, 32, msg, len); }
+
 // Console diagnostics ("gps")
 void t1000aConsoleGps(Print& out) {
   out.printf("gps: on=%d fix=%d sats=%ld lat=%ld lon=%ld uart_rx=%lu bytes en=%d\r\n", nmea.isGpsOn(), nmea.hasValidFix(),
