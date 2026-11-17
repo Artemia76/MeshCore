@@ -88,6 +88,30 @@ static bool consoleCommand(int argc, char** argv) {
     t1000aLrProbe(BleConsole, argc, argv);
     return true;
   }
+#ifdef GR551X_SCHED_STATS
+  if (!strcmp(argv[0], "sched")) {   // sched [reset | awake <s>] : pwr_mgmt_schedule() and loop() durations (twin model)
+    if (argc > 1 && !strcmp(argv[1], "reset")) { gr551x_sched_stats_reset(); BleConsole.print("sched: reset\r\n"); }
+    if (argc > 2 && !strcmp(argv[1], "awake")) {   // force the "no sleep" path, as when hasPendingWork() is stuck
+      gr551x_sched_stats_reset();
+      gr551x_stay_awake((uint32_t)atoi(argv[2]) * 1000);
+      BleConsole.printf("sched: reset, CPU kept awake for %d s\r\n", atoi(argv[2]));
+      return true;
+    }
+    gr551x_sched_stats_t st;
+    gr551x_sched_stats_get(&st);
+    const char* names[3] = { "active", "idle", "loop" };
+    const gr551x_sched_bucket_t* b[3] = { &st.active, &st.idle, &st.loop };
+    for (int i = 0; i < 3; i++) {
+      unsigned long avg_us = b[i]->n ? (unsigned long)(b[i]->ticks * 1000000ULL / 32768 / b[i]->n) : 0;
+      BleConsole.printf("%-6s n=%lu ev=%lu avg=%luus max=%lums | <1ms %lu <10ms %lu <100ms %lu <1s %lu >=1s %lu\r\n",
+                        names[i], (unsigned long)b[i]->n, (unsigned long)b[i]->with_event, avg_us,
+                        (unsigned long)(b[i]->max_ticks * 1000UL / 32768), (unsigned long)b[i]->hist[0],
+                        (unsigned long)b[i]->hist[1], (unsigned long)b[i]->hist[2], (unsigned long)b[i]->hist[3],
+                        (unsigned long)b[i]->hist[4]);
+    }
+    return true;
+  }
+#endif
   if (!strcmp(argv[0], "pending")) { // pending [reset] : what keeps the CPU awake, slowest parts of loop()
     companionLoopDiag(BleConsole, argc > 1 && !strcmp(argv[1], "reset"));
     return true;
