@@ -156,9 +156,10 @@ void t1000aRxDutyInfo(Print& out) {
     out.printf(", listen %lu ms / sleep %lu ms (%u.%u %%)", (unsigned long)(radio_driver.getDutyRxUs() / 1000),
                (unsigned long)(radio_driver.getDutySleepUs() / 1000), pm / 10, pm % 10);
   }
-  out.printf(", noise floor %d dBm, rx %lu (errors %lu), radio wake-ups %lu\r\n", radio_driver.getNoiseFloor(),
-             (unsigned long)radio_driver.getPacketsRecv(), (unsigned long)radio_driver.getPacketsRecvErrors(),
-             (unsigned long)radio_driver.getRadioWakes());
+  out.printf(", noise floor %d dBm, rx %lu (errors %lu), radio wake-ups %lu, stuck asleep %lu\r\n",
+             radio_driver.getNoiseFloor(), (unsigned long)radio_driver.getPacketsRecv(),
+             (unsigned long)radio_driver.getPacketsRecvErrors(), (unsigned long)radio_driver.getRadioWakes(),
+             (unsigned long)radio_driver.getStuckWakes());
 }
 
 // Packet counters for the power log

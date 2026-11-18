@@ -16,6 +16,37 @@ class CustomLR1110Wrapper : public RadioLibWrapper {
   uint32_t _floorAt = 0;
 
   bool dutyQuiet() const { return lr()->isDutyActive() && !_calibrating; }   // no polling allowed now
+
+  // Radio stuck asleep: in duty cycle BUSY is high only between listening windows (tens of ms). On 2026-11-18 the
+  // LR1110 stayed asleep (BUSY high, no IRQ on DIO1) for many minutes, deaf, and every command waited 1 s for it.
+  // Once BUSY has not been seen low for STUCK_SUSPECT_MS, watch the pin for two cycle periods; still high: wake the
+  // radio and restart receive. The IRQ flags found at that moment are kept to find out what put it to sleep.
+  static const uint32_t STUCK_SUSPECT_MS = 2000;
+  uint32_t _busyLowAt = 0, _stuckWakes = 0, _stuckIrq = 0, _stuckAt = 0;
+
+  void checkStuckAsleep() {
+    uint32_t now = millis();
+    if (!lr()->isDutyActive() || _calibrating || !isInRecvMode() || lr()->irqPending() || !lr()->dutyAsleep()) {
+      _busyLowAt = now;           // not cycling, packet waiting (recvRaw wakes it), or awake right now
+      return;
+    }
+    if (now - _busyLowAt < STUCK_SUSPECT_MS) return;
+    uint32_t limit = (lr()->getDutyRxUs() + lr()->getDutySleepUs()) * 2 / 1000 + 10;
+    for (uint32_t t0 = millis(); millis() - t0 < limit; ) {
+      if (!lr()->dutyAsleep()) { _busyLowAt = millis(); return; }   // next window came: it is cycling
+    }
+    lr()->standby();              // NOP wake, then STBY_RC
+    _stuckIrq = lr()->diagIrq();
+    _stuckWakes++;
+    _stuckAt = now;
+    idle();
+    startRecv();
+    _busyLowAt = millis();
+  }
+public:
+  uint32_t getStuckWakes() const { return _stuckWakes; }
+  uint32_t getStuckIrq() const { return _stuckIrq; }
+  uint32_t getStuckAt() const { return _stuckAt; }
 #endif
 
 public:
@@ -34,6 +65,8 @@ public:
     out.printf("rxdiag @%lus: duty=%d active=%d busy=%d irq=%d wakes=%lu rx=%lu rxerr=%lu sent=%lu\r\n",
                millis() / 1000, getRxDutyCycle(), r->isDutyActive(), r->busyNow(), r->irqPending(),
                (unsigned long)r->getWakes(), (unsigned long)n_recv, (unsigned long)n_recv_errors, (unsigned long)n_sent);
+    out.printf("  stuck asleep: %lu (last at %lus, irq 0x%08lx)\r\n", (unsigned long)_stuckWakes,
+               (unsigned long)(_stuckAt / 1000), (unsigned long)_stuckIrq);
     for (int i = 0; i < CustomLR1110::D_N; i++) {
       auto& d = r->diag[i];
       out.printf("  %-9s n=%lu err=%lu last=%d max=%lums avg=%luus\r\n", names[i], (unsigned long)d.calls,
@@ -68,6 +101,7 @@ public:
 
 #ifdef LR11X0_RX_DUTY_CYCLE
   void loop() override {
+    checkStuckAsleep();
 #if defined(LR11X0_DIAG) && defined(GR551X_PLATFORM)
     // active time between two passes = elapsed - CPU idle sleep (the CPU sleeps up to 1 s between passes)
     gr551x_power_stats_t ps;
@@ -163,6 +197,8 @@ public:
   }
 
   bool lastRxHadCRC() override {
+    // called by recvRaw() right after readData(), before receive restarts: latch the packet RSSI/SNR now
+    ((CustomLR1110 *)_radio)->latchPacketStatus();
     bool crc = true;
     ((CustomLR1110 *)_radio)->getLoRaRxHeaderInfo(NULL, &crc);
     return crc;
@@ -183,7 +219,7 @@ public:
   }
 
   uint32_t getEstAirtimeFor(int len_bytes) override {
-    auto airtime = RadioLibWrapper::getEstAirtimeFor(len_bytes);
+    uint32_t airtime = ((CustomLR1110 *)_radio)->getLoRaTimeOnAir(len_bytes) / 1000;   // no SPI (see CustomLR1110.h)
     return airtime < 200 ? 200 : airtime;   // at least 200 millis
   }
 
@@ -197,8 +233,8 @@ public:
     _radio->setPreambleLength(preambleLengthForSF(getSpreadingFactor())); // overcomes weird issues with small and big pkts
   }
 
-  float getLastRSSI() const override { return ((CustomLR1110 *)_radio)->getRSSI(); }
-  float getLastSNR() const override { return ((CustomLR1110 *)_radio)->getSNR(); }
+  float getLastRSSI() const override { return ((CustomLR1110 *)_radio)->getLastPacketRSSI(); }
+  float getLastSNR() const override { return ((CustomLR1110 *)_radio)->getLastPacketSNR(); }
 
   uint8_t getSpreadingFactor() const override { return ((CustomLR1110 *)_radio)->getSpreadingFactor(); }
   

@@ -16,6 +16,7 @@ class CustomLR1110 : public LR1110 {
   uint32_t _activityAt = 0;
   bool _headerSeen = false;
   bool _rx_boosted = false;
+  float _lastPktRssi = 0, _lastPktSnr = 0;
 #ifdef LR11X0_RX_DUTY_CYCLE
   bool _rxDuty = LR11X0_RX_DUTY_CYCLE;   // receive in RX duty cycle (sleep between short listening windows)
   bool _dutyActive = false;              // the last startReceive() actually started a duty cycle
@@ -88,6 +89,21 @@ class CustomLR1110 : public LR1110 {
     }
 
     bool getRxBoostedGainMode() const { return _rx_boosted; }
+
+    // Time on air of a LoRa packet, from the configured modulation only (no SPI). RadioLib's getTimeOnAir() first
+    // reads the packet type from the radio: with the radio asleep (BUSY high) that read times out after 1 s, and
+    // getTimeOnAir() then returns an error code (-20) that reads as a duration of ~71 min. The Dispatcher took it as
+    // the airtime of the next packet and postponed every transmission for hours (T1000-A, 2026-11-18).
+    RadioLibTime_t getLoRaTimeOnAir(size_t len) { return getToA(len, RADIOLIB_MODEM_LORA); }
+
+    // RSSI/SNR of the last received packet, latched right after reading it: receive restarts just after, and a later
+    // read would go to SPI while the radio may sleep in its duty cycle (1 s timeout), or report another state.
+    void latchPacketStatus() {
+      float rssi = 0, snr = 0;
+      if (getPacketStatusLoRa(&rssi, &snr, NULL) == RADIOLIB_ERR_NONE) { _lastPktRssi = rssi; _lastPktSnr = snr; }
+    }
+    float getLastPacketRSSI() const { return _lastPktRssi; }
+    float getLastPacketSNR() const { return _lastPktSnr; }
 
 #ifdef LR11X0_RX_DUTY_CYCLE
     // Every standby wakes the radio with a NOP first: in duty cycle it may be asleep (between windows, or after a
