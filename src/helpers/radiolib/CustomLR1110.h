@@ -22,6 +22,7 @@ class CustomLR1110 : public LR1110 {
   bool _dutyActive = false;              // the last startReceive() actually started a duty cycle
   uint32_t _dutyRxUs = 0, _dutySleepUs = 0;
   uint32_t _wakes = 0;                   // NOP wake-ups of a sleeping radio (diagnostics)
+  uint32_t _standbyRetries = 0;          // STANDBY retried after a BUSY timeout (radio fell asleep meanwhile)
 #endif
 
   static const uint32_t RX_FLAGS = RADIOLIB_IRQ_RX_DEFAULT_FLAGS | (1UL << RADIOLIB_IRQ_PREAMBLE_DETECTED);
@@ -110,8 +111,17 @@ class CustomLR1110 : public LR1110 {
     // packet received), and RadioLib's commands wait for BUSY low before pulling NSS, so they would never wake it.
     int16_t standby() override {
       _dutyActive = false;
-      return LR_DIAG(D_STBY, LR1110::standby(RADIOLIB_LR11X0_STANDBY_RC, true));
+      int16_t st = LR_DIAG(D_STBY, LR1110::standby(RADIOLIB_LR11X0_STANDBY_RC, true));
+      // A command landing just as the radio falls asleep between two windows can leave it asleep for good (BUSY high,
+      // no RTC wake-up): on the T1000-A, 2026-11-18, STANDBY timed out after 1 s once in ~360 transmissions, with
+      // BUSY low just before. The radio is then really asleep: a second NOP wakes it, retry once.
+      if (st == RADIOLIB_ERR_SPI_CMD_TIMEOUT) {
+        _standbyRetries++;
+        st = LR_DIAG(D_STBY, LR1110::standby(RADIOLIB_LR11X0_STANDBY_RC, true));
+      }
+      return st;
     }
+    uint32_t getStandbyRetries() const { return _standbyRetries; }
 #endif
 
     int16_t startReceive() override {

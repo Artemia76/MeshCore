@@ -65,8 +65,8 @@ public:
     out.printf("rxdiag @%lus: duty=%d active=%d busy=%d irq=%d wakes=%lu rx=%lu rxerr=%lu sent=%lu\r\n",
                millis() / 1000, getRxDutyCycle(), r->isDutyActive(), r->busyNow(), r->irqPending(),
                (unsigned long)r->getWakes(), (unsigned long)n_recv, (unsigned long)n_recv_errors, (unsigned long)n_sent);
-    out.printf("  stuck asleep: %lu (last at %lus, irq 0x%08lx)\r\n", (unsigned long)_stuckWakes,
-               (unsigned long)(_stuckAt / 1000), (unsigned long)_stuckIrq);
+    out.printf("  stuck asleep: %lu (last at %lus, irq 0x%08lx)  standby retries: %lu\r\n", (unsigned long)_stuckWakes,
+               (unsigned long)(_stuckAt / 1000), (unsigned long)_stuckIrq, (unsigned long)r->getStandbyRetries());
     for (int i = 0; i < CustomLR1110::D_N; i++) {
       auto& d = r->diag[i];
       out.printf("  %-9s n=%lu err=%lu last=%d max=%lums avg=%luus\r\n", names[i], (unsigned long)d.calls,
