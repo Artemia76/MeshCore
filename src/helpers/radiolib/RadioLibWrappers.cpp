@@ -10,6 +10,7 @@
 
 #define NUM_NOISE_FLOOR_SAMPLES  64
 #define SAMPLING_THRESHOLD  14
+#define AIRTIME_FALLBACK_MS  4000   // airtime assumed when the radio cannot tell (worst case of calcMaxPacketMillis)
 
 static volatile uint8_t state = STATE_IDLE;
 
@@ -163,7 +164,15 @@ int RadioLibWrapper::recvRaw(uint8_t* bytes, int sz) {
 }
 
 uint32_t RadioLibWrapper::getEstAirtimeFor(int len_bytes) {
-  return _radio->getTimeOnAir(len_bytes) / 1000;
+  RadioLibTime_t us = _radio->getTimeOnAir(len_bytes);
+  // LR11x0/LR2021: getTimeOnAir() reads the packet type from the radio first; when the radio does not answer (BUSY
+  // stuck high) it returns a negative error code, which as a duration reads as ~71 min, and the Dispatcher then holds
+  // every transmission for hours. Never take an error for an airtime.
+  if ((int32_t)us < 0) {
+    MESH_DEBUG_PRINTLN("RadioLibWrapper: error: getTimeOnAir(%d)", (int)(int32_t)us);
+    return AIRTIME_FALLBACK_MS;
+  }
+  return us / 1000;
 }
 
 bool RadioLibWrapper::startSendRaw(const uint8_t* bytes, int len) {
