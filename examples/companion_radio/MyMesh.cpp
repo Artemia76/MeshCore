@@ -2654,6 +2654,15 @@ void MyMesh::printPendingWork(Print& out) const {
              dirty_contacts_expiry ? "yes" : "no");
   if (dirty_contacts_expiry) out.printf(" (write in %ld ms)", (long)(int32_t)(dirty_contacts_expiry - now));
   out.print("\r\n");
+  const mesh::DispatcherDiag& d = getDispatcherDiag();
+  out.printf("  checkSend: noDue %lu budget %lu notYet %lu chanBusy %lu forced %lu sent %lu sendFail %lu inFlight %lu\r\n",
+             (unsigned long)d.noDue, (unsigned long)d.budget, (unsigned long)d.notYet, (unsigned long)d.chanBusy,
+             (unsigned long)d.forced, (unsigned long)d.sent, (unsigned long)d.sendFail, (unsigned long)d.inFlight);
+  out.printf("  state: nextTxIn %ld ms, txBudget %lu ms, cadBusyFor %ld ms, inFlight %d, err 0x%02x\r\n", nextTxIn(),
+             getTxBudgetMs(), cadBusyFor(), hasOutboundInFlight(), _err_flags);
+  out.printf("  max ms: radio.loop %lu, outbound %lu, checkRecv %lu, checkSend %lu (isReceiving %lu)\r\n",
+             (unsigned long)d.maxRadioLoop, (unsigned long)d.maxOutbound, (unsigned long)d.maxRecv,
+             (unsigned long)d.maxSend, (unsigned long)d.maxIsRecv);
   for (int i = 0; i < total && i < 8; i++) {
     mesh::Packet* p = _mgr->getOutboundByIdx(i);
     if (p) out.printf("  out[%d] type=%u route=%s payload=%u hops=%u\r\n", i, p->getPayloadType(),

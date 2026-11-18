@@ -63,13 +63,25 @@ uint32_t Dispatcher::getCADFailMaxDuration() const {
   return 4000;   // 4 seconds
 }
 
+#ifdef COMPANION_LOOP_DIAG
+#define DD_MAX(field, t0) do { uint32_t d_ = _ms->getMillis() - (t0); if (d_ > _dd.field) _dd.field = d_; } while (0)
+#define DD_COUNT(field) (_dd.field++)
+long Dispatcher::nextTxIn() const { return (long)(next_tx_time - _ms->getMillis()); }
+long Dispatcher::cadBusyFor() const { return cad_busy_start ? (long)(_ms->getMillis() - cad_busy_start) : -1; }
+#else
+#define DD_MAX(field, t0) do {} while (0)
+#define DD_COUNT(field) do {} while (0)
+#endif
+
 void Dispatcher::loop() {
   if (millisHasNowPassed(next_floor_calib_time)) {
     _radio->triggerNoiseFloorCalibrate(getInterferenceThreshold());
     _radio->setCADEnabled(getCADEnabled());
     next_floor_calib_time = futureMillis(NOISE_FLOOR_CALIB_INTERVAL);
   }
+  unsigned long dd_t = _ms->getMillis(); (void)dd_t;
   _radio->loop();
+  DD_MAX(maxRadioLoop, dd_t);
 
   // check for radio 'stuck' in mode other than Rx
   bool is_recv = _radio->isInRecvMode();
@@ -84,6 +96,7 @@ void Dispatcher::loop() {
   }
 
   if (outbound) {  // waiting for outbound send to be completed
+    dd_t = _ms->getMillis();
     if (_radio->isSendComplete()) {
       long t = _ms->getMillis() - outbound_start;
       total_air_time += t;
@@ -123,8 +136,11 @@ void Dispatcher::loop() {
       releasePacket(outbound);  // return to pool
       outbound = NULL;
     } else {
+      DD_MAX(maxOutbound, dd_t);
+      DD_COUNT(inFlight);
       return;  // can't do any more radio activity until send is complete or timed out
     }
+    DD_MAX(maxOutbound, dd_t);
 
     // going back into receive mode now...
     next_agc_reset_time = futureMillis(getAGCResetInterval());
@@ -142,8 +158,12 @@ void Dispatcher::loop() {
       processRecvPacket(pkt);
     }
   }
+  dd_t = _ms->getMillis();
   checkRecv();
+  DD_MAX(maxRecv, dd_t);
+  dd_t = _ms->getMillis();
   checkSend();
+  DD_MAX(maxSend, dd_t);
 }
 
 bool Dispatcher::tryParsePacket(Packet* pkt, const uint8_t* raw, int len) {
@@ -273,7 +293,7 @@ void Dispatcher::processRecvPacket(Packet* pkt) {
 }
 
 void Dispatcher::checkSend() {
-  if (_mgr->getOutboundCount(_ms->getMillis()) == 0) return;
+  if (_mgr->getOutboundCount(_ms->getMillis()) == 0) { DD_COUNT(noDue); return; }
   
   updateTxBudget();
   
@@ -282,11 +302,15 @@ void Dispatcher::checkSend() {
     float duty_cycle = 1.0f / (1.0f + getAirtimeBudgetFactor());
     unsigned long needed = est_airtime / MIN_TX_BUDGET_AIRTIME_DIV - tx_budget_ms;
     next_tx_time = futureMillis((unsigned long)(needed / duty_cycle));
+    DD_COUNT(budget);
     return;
   }
   
-  if (!millisHasNowPassed(next_tx_time)) return;
-  if (_radio->isReceiving()) {
+  if (!millisHasNowPassed(next_tx_time)) { DD_COUNT(notYet); return; }
+  unsigned long dd_r = _ms->getMillis(); (void)dd_r;
+  bool dd_busy = _radio->isReceiving();
+  DD_MAX(maxIsRecv, dd_r);
+  if (dd_busy) {
     if (cad_busy_start == 0) {
       cad_busy_start = _ms->getMillis();   // record when CAD busy state started
     }
@@ -297,8 +321,10 @@ void Dispatcher::checkSend() {
       MESH_DEBUG_PRINTLN("%s Dispatcher::checkSend(): CAD busy max duration reached!", getLogDateTime());
       // channel activity has gone on too long... (Radio might be in a bad state)
       // force the pending transmit below...
+      DD_COUNT(forced);
     } else {
       next_tx_time = futureMillis(getCADFailRetryDelay());
+      DD_COUNT(chanBusy);
       return;
     }
   }
@@ -334,8 +360,10 @@ void Dispatcher::checkSend() {
   
         releasePacket(outbound);  // return to pool
         outbound = NULL;
+        DD_COUNT(sendFail);
         return;
       }
+      DD_COUNT(sent);
       outbound_expiry = futureMillis(max_airtime);
 
     #if MESH_PACKET_LOGGING

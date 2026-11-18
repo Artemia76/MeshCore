@@ -382,6 +382,7 @@ void companionLoopDiag(Print& out, bool reset) {
   if (reset) {
     memset(s_secMax, 0, sizeof(s_secMax)); memset(s_secSlow, 0, sizeof(s_secSlow));
     s_passes = s_pendPasses = s_pendLongest = 0;
+    the_mesh.resetDispatcherDiag();
     out.print("pending: reset\r\n");
   }
 }
