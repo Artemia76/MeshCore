@@ -115,6 +115,14 @@ typedef uint32_t  DispatcherAction;
  * \brief  The low-level task that manages detecting incoming Packets, and the queueing
  *      and scheduling of outbound Packets.
 */
+#ifdef COMPANION_LOOP_DIAG
+// Debug builds: why checkSend() did or did not transmit, and the slowest step of loop() (ms)
+struct DispatcherDiag {
+  uint32_t noDue, budget, notYet, chanBusy, forced, sent, sendFail, inFlight;
+  uint32_t maxRadioLoop, maxOutbound, maxRecv, maxSend, maxIsRecv;
+};
+#endif
+
 class Dispatcher {
   Packet* outbound;  // current outbound packet
   unsigned long outbound_expiry, outbound_start, total_air_time, rx_air_time;
@@ -131,6 +139,17 @@ class Dispatcher {
 
   void processRecvPacket(Packet* pkt);
   void updateTxBudget();
+#ifdef COMPANION_LOOP_DIAG
+  DispatcherDiag _dd = {};
+public:
+  const DispatcherDiag& getDispatcherDiag() const { return _dd; }
+  void resetDispatcherDiag() { _dd = {}; }
+  bool hasOutboundInFlight() const { return outbound != NULL; }
+  long nextTxIn() const;
+  unsigned long getTxBudgetMs() const { return tx_budget_ms; }
+  long cadBusyFor() const;
+private:
+#endif
 
 protected:
   PacketManager* _mgr;
