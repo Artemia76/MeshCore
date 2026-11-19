@@ -25,6 +25,8 @@ public:
 
   // Charging cable on MSIO0 (~2490 mV plugged in, ~35 mV unplugged, measured on the board); read at most once a second
   bool isExternalPowered() override;
+  // Charger status output (AON4, open drain): low while charging
+  bool isCharging() { return digitalRead(EXT_CHRG_DETECT) == LOW; }
   // No light sleep on the charger: keeps the LED animation smooth, and power does not matter there
   void sleep(uint32_t secs) override {
     if (!isExternalPowered()) GR551xBoard::sleep(secs);
@@ -36,7 +38,6 @@ public:
   void onAfterTransmit() override { powerLog.txEnd(); }
 #endif
 
-  // Battery on MSIO4 through a /2 divider (divider enabled by PIN_BATTERY_EN, kept high).
   // GPIO14 enables the battery divider (÷2 on MSIO4). Seeed's firmware drives it high only around each ADC reading:
   // all ten places that set it are followed by a reading, then by a reset to 0, and its LoRa works with it low.
   // Kept low otherwise: the divider would drain the battery continuously.

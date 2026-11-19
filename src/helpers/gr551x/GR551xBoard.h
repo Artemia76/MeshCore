@@ -19,6 +19,7 @@ public:
 
   uint8_t getStartupReason() const override { return startup_reason; }
   uint16_t getBattMilliVolts() override { return 0; }  // not supported
+  float getMCUTemperature() override;                  // die temperature (sense ADC), GR551xBoard.cpp
   const char* getManufacturerName() const override { return "Generic GR551x"; }
   void reboot() override { gr551x_reboot(); }
 
