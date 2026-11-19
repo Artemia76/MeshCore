@@ -37,8 +37,15 @@ public:
 #endif
 
   // Battery on MSIO4 through a /2 divider (divider enabled by PIN_BATTERY_EN, kept high).
+  // GPIO14 enables the battery divider (÷2 on MSIO4). Seeed's firmware drives it high only around each ADC reading:
+  // all ten places that set it are followed by a reading, then by a reset to 0, and its LoRa works with it low.
+  // Kept low otherwise: the divider would drain the battery continuously.
+  static const uint32_t BATT_DIV_SETTLE_MS = 2;
   uint16_t getBattMilliVolts() override {
+    digitalWrite(PIN_LORA_RF_EN, HIGH);
+    delay(BATT_DIV_SETTLE_MS);
     int mv = analogReadMilliVolts(PIN_BATTERY);
+    digitalWrite(PIN_LORA_RF_EN, LOW);
     return mv > 0 ? (uint16_t)(mv * BATTERY_DIVIDER) : 0;
   }
 };
