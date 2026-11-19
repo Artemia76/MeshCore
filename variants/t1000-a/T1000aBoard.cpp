@@ -44,8 +44,9 @@ static bool consoleCommand(int argc, char** argv) {
     return true;
   }
   if (!strcmp(argv[0], "bat")) {
-    int raw = analogReadMilliVolts(PIN_BATTERY);
-    BleConsole.printf("battery: %u mV (MSIO4 %d mV)\r\n", s_board->getBattMilliVolts(), raw);
+    // MSIO4 with the divider off too: ~0 confirms that GPIO14 enables the divider
+    int off = analogReadMilliVolts(PIN_BATTERY);
+    BleConsole.printf("battery: %u mV (MSIO4 with divider off: %d mV)\r\n", s_board->getBattMilliVolts(), off);
     return true;
   }
   if (!strcmp(argv[0], "gps")) {
@@ -178,9 +179,9 @@ void T1000aBoard::begin() {
   pinMode(PIN_BUTTON1, INPUT);
   pinMode(EXT_CHRG_DETECT, INPUT_PULLUP);   // charger status: open drain, low while charging
 
-  // GPIO14: enables the battery/sensor measurement divider in Seeed's firmware (kept high for now)
+  // GPIO14: battery measurement divider, enabled only during a reading (getBattMilliVolts)
   pinMode(PIN_LORA_RF_EN, OUTPUT);
-  digitalWrite(PIN_LORA_RF_EN, HIGH);
+  digitalWrite(PIN_LORA_RF_EN, LOW);
 
   // GNSS (AG3335) off until the sensor manager starts it; RESET is active low on the T1000-A
   pinMode(GPS_EN, OUTPUT);        digitalWrite(GPS_EN, LOW);

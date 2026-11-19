@@ -142,7 +142,44 @@ class CustomLR1110 : public LR1110 {
     }
 
 #ifdef LR11X0_DIAG
-    int16_t readData(uint8_t* data, size_t len) override { return LR_DIAG(D_READ, LR1110::readData(data, len)); }
+    // Received packets, good vs rejected (debug): RadioLib reports -7 (CRC_MISMATCH) both for a payload CRC error and
+    // for a header error without a valid header (possibly a stale flag): the IRQ flags, read before readData() clears
+    // them, tell which. SNR/RSSI histograms compare rejected packets with good ones (collisions vs weak signals).
+    enum { RX_HIST = 6 };
+    struct RxErr { uint32_t ms; uint32_t irq; int16_t rssi; int8_t snr4; uint8_t len, b0, b1; };
+    uint32_t rxSnrOk[RX_HIST] = {}, rxSnrErr[RX_HIST] = {}, rxRssiOk[RX_HIST] = {}, rxRssiErr[RX_HIST] = {};
+    uint32_t rxErrCrc = 0, rxErrHdr = 0, rxErrOther = 0;
+    RxErr rxErrRing[16] = {};
+    uint8_t rxErrHead = 0;
+    static uint8_t snrBucket(float snr) {      // < -10, -10..-5, -5..0, 0..5, 5..10, >= 10 dB
+      return snr < -10 ? 0 : snr < -5 ? 1 : snr < 0 ? 2 : snr < 5 ? 3 : snr < 10 ? 4 : 5;
+    }
+    static uint8_t rssiBucket(float rssi) {    // < -115, -115..-105, -105..-95, -95..-85, -85..-75, >= -75 dBm
+      return rssi < -115 ? 0 : rssi < -105 ? 1 : rssi < -95 ? 2 : rssi < -85 ? 3 : rssi < -75 ? 4 : 5;
+    }
+    void resetRxStats() {
+      memset(rxSnrOk, 0, sizeof(rxSnrOk)); memset(rxSnrErr, 0, sizeof(rxSnrErr));
+      memset(rxRssiOk, 0, sizeof(rxRssiOk)); memset(rxRssiErr, 0, sizeof(rxRssiErr));
+      memset(rxErrRing, 0, sizeof(rxErrRing)); rxErrCrc = rxErrHdr = rxErrOther = 0;
+    }
+    int16_t readData(uint8_t* data, size_t len) override {
+      uint32_t irq = getIrqStatus();
+      int16_t e = LR_DIAG(D_READ, LR1110::readData(data, len));
+      float rssi = 0, snr = 0;
+      getPacketStatusLoRa(&rssi, &snr, NULL);
+      if (e == RADIOLIB_ERR_NONE) {
+        rxSnrOk[snrBucket(snr)]++; rxRssiOk[rssiBucket(rssi)]++;
+      } else {
+        rxSnrErr[snrBucket(snr)]++; rxRssiErr[rssiBucket(rssi)]++;
+        if (irq & RADIOLIB_LR11X0_IRQ_CRC_ERR) rxErrCrc++;
+        else if (irq & RADIOLIB_LR11X0_IRQ_HEADER_ERR) rxErrHdr++;
+        else rxErrOther++;
+        rxErrRing[rxErrHead] = {millis(), irq, (int16_t)rssi, (int8_t)(snr * 4), (uint8_t)len,
+                                len > 0 ? data[0] : (uint8_t)0, len > 1 ? data[1] : (uint8_t)0};
+        rxErrHead = (rxErrHead + 1) % 16;
+      }
+      return e;
+    }
     int16_t startTransmit(const uint8_t* data, size_t len, uint8_t addr = 0) override {
       return LR_DIAG(D_TX, LR1110::startTransmit(data, len, addr));
     }

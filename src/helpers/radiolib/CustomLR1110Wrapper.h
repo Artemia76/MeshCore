@@ -90,9 +90,30 @@ public:
       if (i % 4 == 3) out.print("\r\n   ");
     }
     out.print("\r\n");
+    static const char* snrN[] = {"<-10", "-10", "-5", "0", "5", ">=10"};
+    static const char* rssiN[] = {"<-115", "-115", "-105", "-95", "-85", ">=-75"};
+    out.printf("  rx rejected: crc %lu, header %lu, other %lu\r\n", (unsigned long)r->rxErrCrc,
+               (unsigned long)r->rxErrHdr, (unsigned long)r->rxErrOther);
+    out.print("  snr dB  (ok/rejected):");
+    for (int i = 0; i < CustomLR1110::RX_HIST; i++)
+      out.printf(" %s:%lu/%lu", snrN[i], (unsigned long)r->rxSnrOk[i], (unsigned long)r->rxSnrErr[i]);
+    out.print("\r\n  rssi dBm (ok/rejected):");
+    for (int i = 0; i < CustomLR1110::RX_HIST; i++)
+      out.printf(" %s:%lu/%lu", rssiN[i], (unsigned long)r->rxRssiOk[i], (unsigned long)r->rxRssiErr[i]);
+    out.print("\r\n  last rejected [s irq rssi snr len hdr path]:");
+    for (int i = 0; i < 16; i++) {
+      auto& e = r->rxErrRing[(r->rxErrHead + 15 - i) % 16];
+      if (!e.ms) continue;
+      int a4 = abs(e.snr4);
+      out.printf(" [%lus %lx %d %s%d.%02d %u %02x %02x]", (unsigned long)(e.ms / 1000), (unsigned long)e.irq, e.rssi,
+                 e.snr4 < 0 ? "-" : "", a4 / 4, (a4 % 4) * 25, e.len, e.b0, e.b1);
+      if (i % 4 == 3) out.print("\r\n   ");
+    }
+    out.print("\r\n");
   }
   void resetDiag() {
     CustomLR1110* r = lr();
+    r->resetRxStats();
     memset(r->diag, 0, sizeof(r->diag)); memset(r->diagRing, 0, sizeof(r->diagRing)); r->diagEvts = 0;
     _gapMax = _gap200 = _gap1s = _txMax = _txStarted = _txDone = _txFail = 0;
     memset(_gapLen, 0, sizeof(_gapLen));
