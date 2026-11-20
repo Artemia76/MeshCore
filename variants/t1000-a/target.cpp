@@ -103,6 +103,8 @@ bool T1000aSensorManager::querySensors(uint8_t requester_permissions, CayenneLPP
     if (!isnan(e.temp_c)) telemetry.addTemperature(TELEM_CHANNEL_ENV, e.temp_c);
     // 0..100 % like Seeed's firmware, sent as Luminosity so that the app labels it (as on the T1000-E)
     telemetry.addLuminosity(TELEM_CHANNEL_ENV, e.light_pct);
+    T1000aBoard::Accel a;
+    if (board.readAccel(a)) telemetry.addAccelerometer(TELEM_CHANNEL_ENV, a.g(a.x), a.g(a.y), a.g(a.z));
   }
   if (requester_permissions & TELEM_PERM_LOCATION) {
     telemetry.addGPS(TELEM_CHANNEL_SELF, node_lat, node_lon, node_altitude);

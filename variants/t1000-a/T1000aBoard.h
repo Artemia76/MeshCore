@@ -10,6 +10,9 @@
 #define PIN_SENSOR_RAIL   0x31   // MSIO1: sensor rail through a /2 divider
 #define PIN_TEMP_SENSOR   0x32   // MSIO2: thermistor divider
 #define PIN_LIGHT_SENSOR  0x33   // MSIO3: photocell
+#define PIN_ACC_PWR       7      // QMA6100P accelerometer power (high = on)
+#define PIN_ACC_SDA       8      // software I2C, as Seeed's firmware (the platform's PIN_WIRE_* are swapped)
+#define PIN_ACC_SCL       9
 
 class T1000aBoard : public GR551xBoard {
   bool _ext_power = false;
@@ -63,4 +66,13 @@ public:
   void readEnvironment(Environment& e);
   static float ntcCelsius(int rail_mv, int ntc_mv);
   static uint8_t lightPercent(int light_mv);
+
+  // QMA6100P accelerometer (T1000aAccel.cpp): powered only for one reading (~50 ms), raw 14-bit samples
+  struct Accel {
+    uint8_t chip_id;
+    int16_t x, y, z;
+    static float g(int16_t raw);
+  };
+  bool readAccel(Accel& a);
+  void accelPinsOff();
 };
