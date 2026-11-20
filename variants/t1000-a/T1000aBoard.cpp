@@ -1,4 +1,5 @@
 #include "T1000aBoard.h"
+#include <math.h>
 #include <gr551x_ble.h>
 #include <helpers/ui/ChargeLed.h>
 
@@ -47,6 +48,21 @@ static bool consoleCommand(int argc, char** argv) {
     // MSIO4 with the divider off too: ~0 confirms that GPIO14 enables the divider
     int off = analogReadMilliVolts(PIN_BATTERY);
     BleConsole.printf("battery: %u mV (MSIO4 with divider off: %d mV)\r\n", s_board->getBattMilliVolts(), off);
+    return true;
+  }
+  if (!strcmp(argv[0], "env")) {     // env : ambient temperature and light, with the raw MSIO readings
+    T1000aBoard::Environment e;
+    s_board->readEnvironment(e);
+    BleConsole.printf("env: temp %.1f C  light %u %%  (rail %d mV, ntc %d mV, light %d mV)\r\n",
+                      e.temp_c, e.light_pct, e.rail_mv, e.ntc_mv, e.light_mv);
+    return true;
+  }
+  if (!strcmp(argv[0], "acc")) {     // acc : one accelerometer reading (QMA6100P), raw and in g
+    T1000aBoard::Accel a;
+    bool ok = s_board->readAccel(a);
+    float x = a.g(a.x), y = a.g(a.y), z = a.g(a.z);
+    BleConsole.printf("acc: %s chip id 0x%02x  x %d y %d z %d  (%.3f %.3f %.3f g, |a| %.3f g)\r\n",
+                      ok ? "ok" : "FAILED", a.chip_id, a.x, a.y, a.z, x, y, z, sqrtf(x * x + y * y + z * z));
     return true;
   }
   if (!strcmp(argv[0], "gps")) {
@@ -182,6 +198,8 @@ void T1000aBoard::begin() {
   // GPIO14: battery measurement divider, enabled only during a reading (getBattMilliVolts)
   pinMode(PIN_LORA_RF_EN, OUTPUT);
   digitalWrite(PIN_LORA_RF_EN, LOW);
+
+  accelPinsOff();   // accelerometer unpowered, powered only while it is read
 
   // GNSS (AG3335) off until the sensor manager starts it; RESET is active low on the T1000-A
   pinMode(GPS_EN, OUTPUT);        digitalWrite(GPS_EN, LOW);

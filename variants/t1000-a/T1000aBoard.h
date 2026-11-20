@@ -7,6 +7,13 @@
 
 // Seeed SenseCAP T1000-A: Goodix GR5515 (BLE) + Semtech LR1110 + Airoha AG3335.
 // Flashing: over BLE through the stock Seeed bootloader ("start ota" restarts into it).
+#define PIN_SENSOR_RAIL   0x31   // MSIO1: sensor rail through a /2 divider
+#define PIN_TEMP_SENSOR   0x32   // MSIO2: thermistor divider
+#define PIN_LIGHT_SENSOR  0x33   // MSIO3: photocell
+#define PIN_ACC_PWR       7      // QMA6100P accelerometer power (high = on)
+#define PIN_ACC_SDA       8      // software I2C, as Seeed's firmware (the platform's PIN_WIRE_* are swapped)
+#define PIN_ACC_SCL       9
+
 class T1000aBoard : public GR551xBoard {
   bool _ext_power = false;
   uint32_t _ext_power_at = 0;
@@ -49,4 +56,23 @@ public:
     digitalWrite(PIN_LORA_RF_EN, LOW);
     return mv > 0 ? (uint16_t)(mv * BATTERY_DIVIDER) : 0;
   }
+
+  // Ambient temperature (thermistor) and light (photocell), on the same GPIO14-powered circuit: T1000aEnv.cpp
+  struct Environment {
+    int rail_mv, ntc_mv, light_mv;   // raw readings (rail = MSIO1 x 2)
+    float temp_c;                    // NAN if the thermistor reading is out of range
+    uint8_t light_pct;
+  };
+  void readEnvironment(Environment& e);
+  static float ntcCelsius(int rail_mv, int ntc_mv);
+  static uint8_t lightPercent(int light_mv);
+
+  // QMA6100P accelerometer (T1000aAccel.cpp): powered only for one reading (~50 ms), raw 14-bit samples
+  struct Accel {
+    uint8_t chip_id;
+    int16_t x, y, z;
+    static float g(int16_t raw);
+  };
+  bool readAccel(Accel& a);
+  void accelPinsOff();
 };

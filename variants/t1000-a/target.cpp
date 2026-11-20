@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <math.h>
 #include "target.h"
 #include "T1000aGpsDriver.h"
 #include <InternalFileSystem.h>
@@ -87,6 +88,7 @@ static uint8_t battPercent(uint16_t mv) {
 }
 
 #define TELEM_CHANNEL_CHARGER  (TELEM_CHANNEL_SELF + 1)
+#define TELEM_CHANNEL_ENV      (TELEM_CHANNEL_SELF + 2)   // channel 1 already carries the MCU temperature
 
 bool T1000aSensorManager::querySensors(uint8_t requester_permissions, CayenneLPP& telemetry) {
   if (requester_permissions & TELEM_PERM_BASE) {
@@ -94,6 +96,15 @@ bool T1000aSensorManager::querySensors(uint8_t requester_permissions, CayenneLPP
     // charger: cable plugged in (digital input), charging (switch)
     telemetry.addDigitalInput(TELEM_CHANNEL_CHARGER, board.isExternalPowered() ? 1 : 0);
     telemetry.addSwitch(TELEM_CHANNEL_CHARGER, board.isCharging() ? 1 : 0);
+  }
+  if (requester_permissions & TELEM_PERM_ENVIRONMENT) {
+    T1000aBoard::Environment e;
+    board.readEnvironment(e);
+    if (!isnan(e.temp_c)) telemetry.addTemperature(TELEM_CHANNEL_ENV, e.temp_c);
+    // 0..100 % like Seeed's firmware, sent as Luminosity so that the app labels it (as on the T1000-E)
+    telemetry.addLuminosity(TELEM_CHANNEL_ENV, e.light_pct);
+    T1000aBoard::Accel a;
+    if (board.readAccel(a)) telemetry.addAccelerometer(TELEM_CHANNEL_ENV, a.g(a.x), a.g(a.y), a.g(a.z));
   }
   if (requester_permissions & TELEM_PERM_LOCATION) {
     telemetry.addGPS(TELEM_CHANNEL_SELF, node_lat, node_lon, node_altitude);
