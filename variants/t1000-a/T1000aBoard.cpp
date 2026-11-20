@@ -49,6 +49,13 @@ static bool consoleCommand(int argc, char** argv) {
     BleConsole.printf("battery: %u mV (MSIO4 with divider off: %d mV)\r\n", s_board->getBattMilliVolts(), off);
     return true;
   }
+  if (!strcmp(argv[0], "env")) {     // env : ambient temperature and light, with the raw MSIO readings
+    T1000aBoard::Environment e;
+    s_board->readEnvironment(e);
+    BleConsole.printf("env: temp %.1f C  light %u %%  (rail %d mV, ntc %d mV, light %d mV)\r\n",
+                      e.temp_c, e.light_pct, e.rail_mv, e.ntc_mv, e.light_mv);
+    return true;
+  }
   if (!strcmp(argv[0], "gps")) {
     t1000aConsoleGps(BleConsole);
     return true;
