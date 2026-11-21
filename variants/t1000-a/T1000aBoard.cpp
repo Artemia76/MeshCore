@@ -2,9 +2,11 @@
 #include <math.h>
 #include <gr551x_ble.h>
 #include <helpers/ui/ChargeLed.h>
+#include <helpers/gr551x/SerialBLEInterface.h>
 
 void t1000aRadioSleep();   // target.cpp
 void t1000aRxDutyLoad();
+void t1000aRxDutyAppLink(bool connected);
 
 #ifdef T1000A_BLE_CONSOLE
   #include <app_pwm.h>
@@ -303,6 +305,7 @@ bool T1000aBoard::isExternalPowered() {
 void T1000aBoard::loop() {
   static bool rxduty_loaded;
   if (!rxduty_loaded) { rxduty_loaded = true; t1000aRxDutyLoad(); }   // InternalFS is up by now
+  t1000aRxDutyAppLink(serialBLEAppConnected());                        // app in use: continuous receive
 #ifdef T1000A_BLE_CONSOLE
   BleConsole.poll();
   powerLog.loop();

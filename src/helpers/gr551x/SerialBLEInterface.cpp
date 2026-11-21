@@ -317,6 +317,10 @@ bool SerialBLEInterface::isConnected() const {
   return s_conn_idx >= 0 && s_cccd == PRF_CLI_START_NTF && (s_secured || !s_pin);
 }
 
+bool serialBLEAppConnected() {
+  return instance && instance->_isEnabled && instance->isConnected();
+}
+
 bool SerialBLEInterface::isWriteBusy() const {
   return send_queue_len >= (FRAME_QUEUE_SIZE * 2 / 3);
 }
