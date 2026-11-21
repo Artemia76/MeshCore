@@ -2,11 +2,9 @@
 #include <math.h>
 #include <gr551x_ble.h>
 #include <helpers/ui/ChargeLed.h>
-#include <helpers/gr551x/SerialBLEInterface.h>
 
 void t1000aRadioSleep();   // target.cpp
 void t1000aRxDutyLoad();
-void t1000aRxDutyAppLink(bool connected);
 
 #ifdef T1000A_BLE_CONSOLE
   #include <app_pwm.h>
@@ -90,6 +88,9 @@ static bool consoleCommand(int argc, char** argv) {
     BleConsole.printf("pwm1: state=%d mode=%08lx upd=%08lx prd=%lu a0=%lu a1=%lu aq=%08lx\r\n", h ? (int)h->state : -1,
                       PWM1->MODE, PWM1->UPDATE, PWM1->PRD, PWM1->CMPA0, PWM1->CMPA1, PWM1->AQCTRL);
     BleConsole.printf("aon: mux=%08lx pad1=%08lx\r\n", MCU_SUB->AON_PAD_MUX_CTL, AON->AON_PAD_CTL1);
+    // clock gating: PWM0 and PWM1 share one hclk (bit 3): CG_CTRL0 = off in WFI, CG_CTRL1 = forced off
+    BleConsole.printf("cg: wfi=%08lx force=%08lx ctl2=%08lx  pwm0: mode=%08lx prd=%lu\r\n", MCU_SUB->MCU_SUBSYS_CG_CTRL[0],
+                      MCU_SUB->MCU_SUBSYS_CG_CTRL[1], MCU_SUB->MCU_SUBSYS_CG_CTRL[2], PWM0->MODE, PWM0->PRD);
     return true;
   }
   if (!strcmp(argv[0], "rxdiag")) {  // rxdiag [reset] : radio driver diagnostics (RadioLib calls, loop gaps, TX)
@@ -305,7 +306,6 @@ bool T1000aBoard::isExternalPowered() {
 void T1000aBoard::loop() {
   static bool rxduty_loaded;
   if (!rxduty_loaded) { rxduty_loaded = true; t1000aRxDutyLoad(); }   // InternalFS is up by now
-  t1000aRxDutyAppLink(serialBLEAppConnected());                        // app in use: continuous receive
 #ifdef T1000A_BLE_CONSOLE
   BleConsole.poll();
   powerLog.loop();
