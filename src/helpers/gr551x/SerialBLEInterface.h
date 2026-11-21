@@ -56,10 +56,6 @@ private:
 // Prints the recent BLE connection / security events (diagnostics)
 void serialBLEDumpLog(Print& out);
 
-// A companion app is connected and listening (notifications on, paired when a PIN is set): the board can trade
-// energy for reception while it is in use
-bool serialBLEAppConnected();
-
 #if BLE_DEBUG_LOGGING && ARDUINO
   #include <Arduino.h>
   #define BLE_DEBUG_PRINT(F, ...) Serial.printf("BLE: " F, ##__VA_ARGS__)
