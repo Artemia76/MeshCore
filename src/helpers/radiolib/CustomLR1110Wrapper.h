@@ -14,6 +14,19 @@ class CustomLR1110Wrapper : public RadioLibWrapper {
   bool _calibrating = false;
   bool _floorKnown = false;
   uint32_t _floorAt = 0;
+  // Duty cycle held off (continuous receive) while the companion app is connected. The cycle is sized for 32-symbol
+  // preambles (MeshCore >= 1.16 at SF <= 8): 16-symbol frames from older repeaters last about one sleep period, and
+  // 21 % (strong) to 52 % (weak signal) of them are missed. Active use (Mesh Mapper, chat) gets full reception;
+  // the cycle saves energy at rest. _dutyWanted is the user setting (console "rxduty").
+  bool _dutyWanted = LR11X0_RX_DUTY_CYCLE;
+  bool _dutyHeld = false;
+  void applyDuty() {
+    bool en = _dutyWanted && !_dutyHeld;
+    if (en == (lr()->getRxDutyCycle() || _calibrating)) return;
+    _calibrating = false;
+    lr()->setRxDutyCycle(en);
+    idle();                                 // next recvRaw() restarts receive in the new mode
+  }
 
   bool dutyQuiet() const { return lr()->isDutyActive() && !_calibrating; }   // no polling allowed now
 
@@ -155,19 +168,28 @@ public:
       _calibrating = false;                 // floor computed: back to the duty cycle
       _floorKnown = true;
       _floorAt = millis();
-      lr()->setRxDutyCycle(true);
+      lr()->setRxDutyCycle(_dutyWanted && !_dutyHeld);
       if (isInRecvMode()) startRecv();
     }
   }
 
-  // RX duty cycle on/off (applied at the next startReceive(); a noise-floor round runs first when enabling)
+  // RX duty cycle on/off, user setting (applied at the next startReceive(); a noise-floor round runs first when
+  // the cycle starts)
   void setRxDutyCycle(bool en) {
+    _dutyWanted = en;
+    if (en) _floorKnown = false;
     _calibrating = false;
-    _floorKnown = !en ? _floorKnown : false;
-    lr()->setRxDutyCycle(en);
+    lr()->setRxDutyCycle(en && !_dutyHeld);
     idle();
   }
-  bool getRxDutyCycle() const { return lr()->getRxDutyCycle() || _calibrating; }
+  bool getRxDutyCycle() const { return _dutyWanted; }
+  // hold the cycle off (continuous receive) while true, e.g. companion app connected
+  void setRxDutyHeld(bool held) {
+    if (held == _dutyHeld) return;
+    _dutyHeld = held;
+    applyDuty();
+  }
+  bool getRxDutyHeld() const { return _dutyHeld; }
   bool isDutyActive() const { return lr()->isDutyActive(); }
   uint32_t getDutyRxUs() const { return lr()->getDutyRxUs(); }
   uint32_t getDutySleepUs() const { return lr()->getDutySleepUs(); }

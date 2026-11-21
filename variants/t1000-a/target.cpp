@@ -174,13 +174,32 @@ void t1000aRxDutyLoad() {
   if (c == '0' || c == '1') radio_driver.setRxDutyCycle(c == '1');
 }
 
+// Companion app connected: continuous receive (the cycle misses part of the 16-symbol frames of repeaters running
+// MeshCore <= 1.15, see CustomLR1110Wrapper::setRxDutyHeld). The cycle resumes 30 s after the app is gone, so
+// that brief reconnections keep full reception.
+#define RXDUTY_APP_LINGER_MS 30000UL
+void t1000aRxDutyAppLink(bool connected) {
+  static bool held = false;
+  static uint32_t seenAt = 0;
+  uint32_t now = millis();
+  if (connected) {
+    seenAt = now;
+    if (!held) { held = true; radio_driver.setRxDutyHeld(true); }
+  } else if (held && now - seenAt >= RXDUTY_APP_LINGER_MS) {
+    held = false;
+    radio_driver.setRxDutyHeld(false);
+  }
+}
+
 bool t1000aRxDutyOn() { return radio_driver.isDutyActive(); }
 uint16_t t1000aRxDutyShare() { return radio_driver.getRxDutyShare(); }
 
 #ifdef T1000A_BLE_CONSOLE   // debug build: power log and console diagnostics
 void t1000aRxDutyInfo(Print& out) {
   out.printf("rxduty: %s, %s", radio_driver.getRxDutyCycle() ? "on" : "off",
-             radio_driver.isDutyActive() ? "cycling" : "continuous receive");
+             radio_driver.isDutyActive() ? "cycling"
+             : radio_driver.getRxDutyCycle() && radio_driver.getRxDutyHeld() ? "continuous receive (app connected)"
+             : "continuous receive");
   if (radio_driver.isDutyActive()) {
     uint16_t pm = radio_driver.getRxDutyShare();
     out.printf(", listen %lu ms / sleep %lu ms (%u.%u %%)", (unsigned long)(radio_driver.getDutyRxUs() / 1000),

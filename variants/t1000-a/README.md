@@ -50,8 +50,11 @@ With MeshCore's 32-symbol preamble at SF8 / 62.5 kHz, it listens about 60 ms and
 of the time. The datasheet receive current drops from about 7.8 mA to about 4 mA.
 
 - Packets are delivered as before: once a window catches a preamble, the radio stays awake for the whole packet.
-- Limit: nodes running MeshCore 1.15 or older send a 16-symbol preamble at SF8, and about two thirds of the packets
-  they send directly are missed. Packets relayed by newer repeaters carry the long preamble.
+- Limit: nodes running MeshCore 1.15 or older send a 16-symbol preamble at SF8, which lasts about one sleep
+  period: 21 % (strong signal) to 52 % (weak signal) of the packets they send directly are missed. Packets relayed
+  by newer repeaters carry the long preamble.
+- While the companion app is connected (Mesh Mapper, chat), the board receives continuously, so the replies of
+  older repeaters are not lost; the cycle resumes 30 s after the app disconnects.
 - The radio is never polled over SPI while it sleeps (that would wake it up). The noise floor is measured in a
   short continuous-receive burst at start-up and every 10 min.
 - Console: `rxduty` shows the windows and the noise floor; `rxduty off` / `rxduty on` switch it and the setting is
