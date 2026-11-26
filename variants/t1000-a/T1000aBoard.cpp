@@ -47,7 +47,11 @@ static bool consoleCommand(int argc, char** argv) {
   if (!strcmp(argv[0], "bat")) {
     // MSIO4 with the divider off too: ~0 confirms that GPIO14 enables the divider
     int off = analogReadMilliVolts(PIN_BATTERY);
-    BleConsole.printf("battery: %u mV (MSIO4 with divider off: %d mV)\r\n", s_board->getBattMilliVolts(), off);
+    uint16_t mv = s_board->getBattMilliVolts();
+    BleConsole.printf("battery: %u mV, %u %% (MSIO4 with divider off: %d mV)\r\n", mv, T1000aBoard::battPercent(mv), off);
+    BleConsole.printf("low battery: off below %u mV (%u readings in a row, 1/min), boot refused below %u mV;"
+                      " now %u/%u\r\n", T1000aBoard::LOW_BATT_OFF_MV, T1000aBoard::LOW_BATT_READINGS,
+                      T1000aBoard::LOW_BATT_BOOT_MV, s_board->lowBatteryCount(), T1000aBoard::LOW_BATT_READINGS);
     return true;
   }
   if (!strcmp(argv[0], "env")) {     // env : ambient temperature and light, with the raw MSIO readings
@@ -263,6 +267,14 @@ void T1000aBoard::offBoot(const gr551x_off_info_t& off) {
     digitalWrite(PIN_LED, LOW);   // back to GPIO
   } else {
     on = holdButton(300);
+    uint16_t mv = on ? getBattMilliVolts() : 0;
+    if (on && mv > 1000 && mv < LOW_BATT_BOOT_MV) {   // battery too low: 5 short blinks, stays off
+      for (int i = 0; i < 5; i++) {
+        digitalWrite(PIN_LED, HIGH); delay(50);
+        digitalWrite(PIN_LED, LOW);  delay(150);
+      }
+      on = false;
+    }
   }
   if (!on) sleepNow(off.batt_mv);
 
@@ -310,20 +322,47 @@ void T1000aBoard::loop() {
   BleConsole.poll();
   powerLog.loop();
 #endif
+  checkLowBattery();
   GR551xBoard::loop();
 }
 
-// Long press (3 s, UITask) -> real power off. Holding on until 6 s restarts into the BLE DFU bootloader instead
-// (handled by the platform variant). Every part goes to its lowest state, then the GR5515 enters ultra deep sleep;
-// power on = button held 2 s (offBoot).
-void T1000aBoard::powerOff() {
-  uint16_t mv = getBattMilliVolts();   // before the measurement divider is cut
+void T1000aBoard::checkLowBattery() {
+  uint32_t now = millis();
+  if (now - _low_batt_at < LOW_BATT_CHECK_MS) return;
+  _low_batt_at = now;
+  if (isExternalPowered()) { _low_batt_count = 0; return; }
+  uint16_t mv = getBattMilliVolts();
+  if (mv <= 1000 || mv >= LOW_BATT_OFF_MV) { _low_batt_count = 0; return; }   // <= 1000: not a valid reading
+  if (++_low_batt_count >= LOW_BATT_READINGS) shutdown(mv);
+}
+
+uint8_t T1000aBoard::battPercent(uint16_t mv) {
+  // Seeed v2.5 (0x01022A1C, table at 0x01042F60): 0 % at 3200 mV, 20 % at 3590 mV, then 8 % per step
+  static const uint16_t mv_at[12] = {3200, 3590, 3650, 3700, 3740, 3760, 3795, 3840, 3910, 3980, 4070, 4150};
+  if (mv <= mv_at[0]) return 0;
+  if (mv >= mv_at[11]) return 100;
+  if (mv < mv_at[1]) return (uint8_t)((mv - mv_at[0]) * 20 / (mv_at[1] - mv_at[0]));
+  int i = 2;
+  while (mv >= mv_at[i]) i++;
+  return (uint8_t)(20 + 8 * (i - 2) + 8 * (mv - mv_at[i - 1]) / (mv_at[i] - mv_at[i - 1]));
+}
+
+// Every part goes to its lowest state, then the GR5515 enters ultra deep sleep (wake: button or charger, offBoot)
+// With wait_release (long press), the LED stays on until the button is released.
+void T1000aBoard::shutdown(uint16_t batt_mv, bool wait_release) {
   digitalWrite(GPS_EN, LOW);
   t1000aRadioSleep();                  // LR1110 cold sleep; GNSS (with its backup supply), divider, buzzer: sleepNow()
   gr551x_ble_stop();
+  if (wait_release) {
+    digitalWrite(PIN_LED, HIGH);
+    while (digitalRead(PIN_BUTTON1) == HIGH) delay(10);   // released before 6 s: really go off
+    digitalWrite(PIN_LED, LOW);
+  }
+  sleepNow(batt_mv);
+}
 
-  digitalWrite(PIN_LED, HIGH);
-  while (digitalRead(PIN_BUTTON1) == HIGH) delay(10);   // released before 6 s: really go off
-  digitalWrite(PIN_LED, LOW);
-  sleepNow(mv);
+// Long press (3 s, UITask) -> real power off. Holding on until 6 s restarts into the BLE DFU bootloader instead
+// (handled by the platform variant). Power on = button held 2 s (offBoot).
+void T1000aBoard::powerOff() {
+  shutdown(getBattMilliVolts(), true);   // read before the measurement divider is cut
 }

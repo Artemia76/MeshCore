@@ -74,6 +74,18 @@ already full does not wake when plugged in (the charger status does not change).
 the DFU bootloader. After a power off, the debug console's `power` command shows the battery voltage when it went off
 and when it came back, and how many wakes went straight back to sleep meanwhile.
 
+## Battery
+
+The companion reports the battery voltage; the app turns it into a percentage. The telemetry percentage (channel 1)
+uses the curve of Seeed's own firmware for this 700 mAh LiPo: 0 % at 3200 mV, 20 % at 3590 mV, 52 % at 3760 mV,
+100 % at 4150 mV. Apps that use a straight line from 3.0 to 4.2 V show about 30 points too much below 3.7 V
+(40 % shown is about 14 % left).
+
+To protect the battery, on battery the box switches off by itself (as above) when the voltage stays below
+3300 mV (about 5 %) for three readings in a row, one a minute. The button then refuses to switch it on below
+3400 mV: five short blinks and it stays off. Plugging the charger in wakes it as after any power off. The debug
+console's `bat` command shows the voltage, the percentage and the protection state.
+
 ## Flashing
 
 The T1000-A has no USB data port: flashing is done over **Bluetooth**, through the stock Seeed/Goodix bootloader,
