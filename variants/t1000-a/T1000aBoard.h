@@ -19,12 +19,30 @@ class T1000aBoard : public GR551xBoard {
   uint32_t _ext_power_at = 0;
   bool _ext_power_valid = false;
 
+  uint32_t _low_batt_at = 0;   // last low-battery check (millis)
+  uint8_t _low_batt_count = 0;  // consecutive readings below LOW_BATT_OFF_MV
+
   bool holdButton(uint32_t ms);
   bool cablePresent();
   void offBoot(const gr551x_off_info_t& off);
+  void checkLowBattery();
+  [[noreturn]] void shutdown(uint16_t batt_mv, bool wait_release = false);
   [[noreturn]] void sleepNow(uint16_t batt_mv);
 
 public:
+  // Low-battery protection, on battery only. Seeed's firmware counts 0 % at 3200 mV (docs/materiel-t1000a.md);
+  // 3300 mV is about 5 % on its curve. One reading a minute, three in a row below the threshold (a reading taken
+  // during a LoRa transmission sags), then a real power off. Waking with the button refuses to power on below
+  // LOW_BATT_BOOT_MV (the voltage recovers a little without load); a charger wakes it as after any power off.
+  static const uint16_t LOW_BATT_OFF_MV = 3300;
+  static const uint16_t LOW_BATT_BOOT_MV = 3400;
+  static const uint32_t LOW_BATT_CHECK_MS = 60000;
+  static const uint8_t LOW_BATT_READINGS = 3;
+  uint8_t lowBatteryCount() const { return _low_batt_count; }
+
+  // State of charge from the voltage, with the curve of Seeed's firmware for this 700 mAh LiPo
+  static uint8_t battPercent(uint16_t mv);
+
   void begin() override;
   void loop() override;
   void powerOff() override;

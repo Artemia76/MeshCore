@@ -76,23 +76,12 @@ bool T1000aSensorManager::begin() {
   return true;
 }
 
-// Battery state of charge from its voltage: Li-ion open-circuit curve in 10 % steps, interpolated (reads high
-// while charging, the voltage then being above the open-circuit one)
-static uint8_t battPercent(uint16_t mv) {
-  static const uint16_t ocv[11] = {4190, 4050, 3990, 3890, 3800, 3720, 3670, 3640, 3580, 3460, 3100};  // 100..0 %
-  if (mv >= ocv[0]) return 100;
-  if (mv <= ocv[10]) return 0;
-  int i = 1;
-  while (mv < ocv[i]) i++;
-  return (uint8_t)(100 - 10 * i + 10 * (mv - ocv[i]) / (ocv[i - 1] - ocv[i]));
-}
-
 #define TELEM_CHANNEL_CHARGER  (TELEM_CHANNEL_SELF + 1)
 #define TELEM_CHANNEL_ENV      (TELEM_CHANNEL_SELF + 2)   // channel 1 already carries the MCU temperature
 
 bool T1000aSensorManager::querySensors(uint8_t requester_permissions, CayenneLPP& telemetry) {
   if (requester_permissions & TELEM_PERM_BASE) {
-    telemetry.addPercentage(TELEM_CHANNEL_SELF, battPercent(board.getBattMilliVolts()));
+    telemetry.addPercentage(TELEM_CHANNEL_SELF, T1000aBoard::battPercent(board.getBattMilliVolts()));
     // charger: cable plugged in (digital input), charging (switch)
     telemetry.addDigitalInput(TELEM_CHANNEL_CHARGER, board.isExternalPowered() ? 1 : 0);
     telemetry.addSwitch(TELEM_CHANNEL_CHARGER, board.isCharging() ? 1 : 0);
